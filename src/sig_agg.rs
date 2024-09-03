@@ -158,7 +158,7 @@ mod tests {
                 .zip(test_case.is_xonly)
                 .fold(key_agg_ctx, |ctx, (tweak, is_xonly)| {
                     ctx.with_tweak(tweak, is_xonly)
-                        .expect(&format!("failed to tweak key agg context with {:x}", tweak))
+                        .unwrap_or_else(|_| panic!("failed to tweak key agg context with {:x}", tweak))
                 });
 
             let partial_signatures: Vec<Scalar> = test_case
@@ -183,12 +183,8 @@ mod tests {
                 "incorrect aggregated signature"
             );
 
-            verify_single(key_agg_ctx.pubkey, aggregated_signature, &vectors.message).expect(
-                &format!(
-                    "aggregated signature {} should be valid BIP340 signature",
-                    aggregated_signature
-                ),
-            );
+            verify_single(key_agg_ctx.pubkey, aggregated_signature, &vectors.message).unwrap_or_else(|_| panic!("aggregated signature {} should be valid BIP340 signature",
+                    aggregated_signature));
         }
     }
 
@@ -240,7 +236,7 @@ mod tests {
                         secnonce,
                         &aggnonce,
                         adaptor_point,
-                        &message,
+                        message,
                     )
                 })
                 .collect::<Result<Vec<_>, _>>()
@@ -251,14 +247,14 @@ mod tests {
                 &aggnonce,
                 adaptor_point,
                 partial_signatures.iter().copied(),
-                &message,
+                message,
             )
             .expect("failed to aggregate partial adaptor signatures");
 
             crate::adaptor::verify_single(
                 key_agg_ctx.aggregated_pubkey::<Point>(),
                 &adaptor_signature,
-                &message,
+                message,
                 adaptor_point,
             )
             .expect("invalid aggregated adaptor signature");
@@ -267,7 +263,7 @@ mod tests {
             verify_single(
                 key_agg_ctx.aggregated_pubkey::<Point>(),
                 valid_signature,
-                &message,
+                message,
             )
             .expect("invalid decrypted adaptor signature");
 
