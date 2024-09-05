@@ -7,22 +7,22 @@ check-default:
 
 # Checks the source code with all features enabled.
 check-mixed:
-	cargo check --all-features
-	cargo check --all-features --tests
+	cargo clippy --all-features
+	cargo clippy --all-features --tests
 
 # Checks the source code with variations of libsecp256k1 feature sets.
 check-secp256k1:
-	cargo check --no-default-features --features secp256k1
-	cargo check --no-default-features --features secp256k1,serde
-	cargo check --no-default-features --features secp256k1,serde,rand
-	cargo check --no-default-features --features secp256k1,serde,rand --tests
+	cargo clippy --no-default-features --features secp256k1
+	cargo clippy --no-default-features --features secp256k1,serde
+	cargo clippy --no-default-features --features secp256k1,serde,rand
+	cargo clippy --no-default-features --features secp256k1,serde,rand --tests
 
 # Checks the source code with variations of pure-rust feature sets.
 check-k256:
-	cargo check --no-default-features --features k256
-	cargo check --no-default-features --features k256,serde
-	cargo check --no-default-features --features k256,serde,rand
-	cargo check --no-default-features --features k256,serde,rand --tests
+	cargo clippy --no-default-features --features k256
+	cargo clippy --no-default-features --features k256,serde
+	cargo clippy --no-default-features --features k256,serde,rand
+	cargo clippy --no-default-features --features k256,serde,rand --tests
 
 
 test: test-default test-mixed test-secp256k1 test-k256
