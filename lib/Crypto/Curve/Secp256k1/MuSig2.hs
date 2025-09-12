@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_HADDOCK prune #-}
 
 {- |
@@ -9,7 +11,15 @@ Maintainer: Jose Storopoli <jose@storopoli.com>
 MuSig2 signing Haskell library.
 TODO: add description
 -}
-module Crypto.Curve.Secp256k1.MuSig2 (foo) where
+module Crypto.Curve.Secp256k1.MuSig2 (sortPubkeys) where
 
-foo :: Int
-foo = 1
+import Crypto.Curve.Secp256k1 (Pub, serialize_point)
+import Data.List (sort)
+
+-- | Manual 'Ord' implementation of 'Projective' for lexicography sorting.
+instance Ord Projective where
+  compare x y = compare (serialize_point x) (serialize_point y)
+
+-- | Lexicographically 'sort's a 'List' of 'Pub'keys.
+sortPubkeys :: [Pub] -> [Pub]
+sortPubkeys = sort
