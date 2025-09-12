@@ -1,0 +1,10 @@
+cradle:
+  cabal:
+    - path: "lib"
+      component: "lib:musig2"
+
+    - path: "test"
+      component: "musig2:test:musig2-tests"
+
+    - path: "bench/Main.hs"
+      component: "musig2:bench:musig2-bench"
