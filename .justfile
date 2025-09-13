@@ -27,8 +27,11 @@ clean:
 deps:
     cabal build --dependencies-only all
 
+# Format workspace
+format: format-hs format-cabal format-nix
+
 # Format all Haskell files (if `fourmolu` is installed)
-format:
+format-hs:
     #!/usr/bin/env bash
     if command -v fourmolu &> /dev/null; then
         fourmolu -i lib
@@ -38,3 +41,20 @@ format:
         echo "fourmolu not installed, skipping format"
     fi
 
+# Format all Cabal files (if `cabal-fmt` is installed)
+format-cabal:
+    #!/usr/bin/env bash
+    if command -v cabal-fmt &> /dev/null; then
+        cabal-fmt -i musig2.cabal
+    else
+        echo "cabal-fmt not installed, skipping format"
+    fi
+
+# Format all Nix files (if `nixfmt-rfc-style` is installed)
+format-nix:
+    #!/usr/bin/env bash
+    if command -v nixfmt &> /dev/null; then
+        nixfmt flake.nix
+    else
+        echo "nixfmt not installed, skipping format"
+    fi
