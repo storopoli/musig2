@@ -32,6 +32,7 @@ test-suite musig2-tests
   hs-source-dirs:   test
   main-is:          Main.hs
   other-modules:
+    MonoidProjective
     SortPubkeys
     Util
 
@@ -44,6 +45,7 @@ test-suite musig2-tests
     , ppad-secp256k1
     , tasty
     , tasty-hunit
+    , tasty-quickcheck
 
 benchmark musig2-bench
   type:             exitcode-stdio-1.0
