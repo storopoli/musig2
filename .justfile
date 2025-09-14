@@ -27,6 +27,10 @@ clean:
 deps:
     cabal build --dependencies-only all
 
+# Instantiate a `ghci` REPL for the project
+repl:
+    cabal repl musig2
+
 # Format workspace
 format: format-hs format-cabal format-nix
 
