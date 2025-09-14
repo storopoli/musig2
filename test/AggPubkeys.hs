@@ -2,12 +2,12 @@
 
 module AggPubkeys (testAggPubkeys) where
 
+import Control.Exception (ErrorCall (..), evaluate, try)
 import Crypto.Curve.Secp256k1 (Pub, serialize_point)
-import Crypto.Curve.Secp256k1.MuSig2 (aggPubkeys)
+import Crypto.Curve.Secp256k1.MuSig2 (KeyAggContext (..), Tweak (..), mkKeyAggContext)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
-import Data.Maybe (fromJust)
 import Test.Tasty
 import Test.Tasty.HUnit
 import Util (parsePoint)
@@ -45,16 +45,55 @@ testVectors =
   , ([0, 0, 1, 1], decodeHex "69BC22BFA5D106306E48A20679DE1D7389386124D07571D0D872686028C26A3E")
   ]
 
+-- | Tweak test vectors from BIP327
+tweaks :: [Integer]
+tweaks =
+  [ 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141 -- curve order (invalid)
+  , 0x252E4BD67410A76CDF933D30EAA1608214037F1B105A013ECCD3C5C184A6110B -- causes point at infinity
+  ]
+
+-- | Error test cases: (key indices, tweak index, is_xonly, expected error message)
+errorTestVectors :: [([Int], Int, Bool, String)]
+errorTestVectors =
+  [ ([0, 1], 0, True, "The tweak must be less than n") -- Tweak is out of range
+  -- TODO: Add test for tweaking result being point at infinity
+  -- This requires implementing the actual tweaking operation, not just storing the tweak
+  -- ([6], 1, False, "aggregated public key is point at infinity") -- Intermediate tweaking result is point at infinity
+  ]
+
 -- | Creates test case from vector data.
 makeTestCase :: Int -> ([Int], ByteString) -> TestTree
 makeTestCase i (indices, expected) =
   testCase ("BIP327 test vector " <> show (i + 1)) $
-    extractXOnly (fromJust (aggPubkeys selectedKeys)) @=? expected
+    extractXOnly aggPk @=? expected
  where
   selectedKeys = map (inputPubkeys !!) indices
+  keyAggCtx = mkKeyAggContext selectedKeys Nothing
+  aggPk = case keyAggCtx of KeyAggContext{q = qVal} -> qVal
+
+-- | Creates error test case from vector data.
+makeErrorTestCase :: Int -> ([Int], Int, Bool, String) -> TestTree
+makeErrorTestCase i (keyIndices, tweakIndex, isXOnly, expectedMsg) =
+  testCase ("BIP327 error test vector " <> show (i + 1)) $ do
+    result <- try $ evaluate $ mkKeyAggContext selectedKeys (Just tweak)
+    case result of
+      Left (ErrorCall msg) -> assertBool ("Expected '" <> expectedMsg <> "' in error message, got: " <> msg) (expectedMsg `isSubsequenceOf` msg)
+      Right _ -> assertFailure "Expected error but got success"
+ where
+  selectedKeys = map (inputPubkeys !!) keyIndices
+  tweakVal = tweaks !! tweakIndex
+  tweak = if isXOnly then XOnlyTweak tweakVal else PlainTweak tweakVal
+
+  isSubsequenceOf :: String -> String -> Bool
+  isSubsequenceOf [] _ = True
+  isSubsequenceOf _ [] = False
+  isSubsequenceOf (x : xs) (y : ys)
+    | x == y = isSubsequenceOf xs ys
+    | otherwise = isSubsequenceOf (x : xs) ys
 
 -- | Test vectors from [BIP327 `key_agg_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/key_agg_vectors.json).
 testAggPubkeys :: TestTree
 testAggPubkeys =
   testGroup "aggregating pubkeys" $
     zipWith makeTestCase [0 ..] testVectors
+      <> zipWith makeErrorTestCase [0 ..] errorTestVectors
