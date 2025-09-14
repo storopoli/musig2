@@ -20,6 +20,8 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   -- derived instances
   Monoid,
   Semigroup,
+  -- utils/misc
+  isEvenPub,
 )
 where
 
@@ -117,3 +119,10 @@ hashTag t s = hash (taggedHash <> taggedHash <> s)
 -- | Converts a SHA-256 'ByteString' to an 'Integer'.
 bytesToInteger :: ByteString -> Integer
 bytesToInteger = BS.foldl' (\acc b -> acc * 256 + fromIntegral b) 0
+
+-- | Checks if a |Pub|key is even.
+isEvenPub :: Pub -> Bool
+isEvenPub pub = case BS.unpack (serialize_point pub) of
+  (0x02 : _) -> True -- even y-coordinate
+  (0x03 : _) -> False -- odd y-coordinate
+  _ -> error "Invalid compressed point format"

@@ -36,6 +36,7 @@ test-suite musig2-tests
   other-modules:
     AggPubkeys
     MonoidProjective
+    ParityPub
     SortPubkeys
     Util
 
