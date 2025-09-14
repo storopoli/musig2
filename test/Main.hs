@@ -1,12 +1,13 @@
 module Main where
 
+import AggPubkeys (testAggPubkeys)
 import MonoidProjective (propertyMonoidProjective)
-import SortPubkeys (testSortPubkey)
+import SortPubkeys (testSortPubkeys)
 import Test.Tasty
 
 -- | Unit tests.
 unitTests :: TestTree
-unitTests = testGroup "Unit Tests" [testSortPubkey]
+unitTests = testGroup "Unit Tests" [testSortPubkeys, testAggPubkeys]
 
 -- | Property tests.
 propertyTests :: TestTree

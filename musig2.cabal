@@ -8,7 +8,7 @@ author:          Jose Storopoli
 maintainer:      jose@storopoli.com
 category:        Cryptography
 build-type:      Simple
-tested-with:     GHC ==9.6.4 || ==9.8.1
+tested-with:     GHC ==9.8.4
 extra-doc-files: CHANGELOG
 description:     MuSig2 signing Haskell library. TODO: add description.
 
@@ -22,9 +22,11 @@ library
   ghc-options:      -Wall
   exposed-modules:  Crypto.Curve.Secp256k1.MuSig2
   build-depends:
-    , base            >=4.9 && <5
-    , bytestring      >=0.9 && <0.13
-    , ppad-secp256k1  >=0.3 && <0.5
+    , base               >=4.9 && <5
+    , base16-bytestring  >=1.0 && <1.1.0
+    , bytestring         >=0.9 && <0.13
+    , ppad-secp256k1     >=0.3 && <0.5
+    , ppad-sha256        >=0.2 && <0.3.0
 
 test-suite musig2-tests
   type:             exitcode-stdio-1.0
@@ -32,6 +34,7 @@ test-suite musig2-tests
   hs-source-dirs:   test
   main-is:          Main.hs
   other-modules:
+    AggPubkeys
     MonoidProjective
     SortPubkeys
     Util

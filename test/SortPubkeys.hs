@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module SortPubkeys (testSortPubkey) where
+module SortPubkeys (testSortPubkeys) where
 
 import Crypto.Curve.Secp256k1 (Pub)
 import Crypto.Curve.Secp256k1.MuSig2 (sortPubkeys)
@@ -32,9 +32,9 @@ parsePointsSorted =
     , "03DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B502BA659"
     ]
 
--- | Test vector from [BIP327 `key_sort_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/key_sort_vectors.json)
-testSortPubkey :: TestTree
-testSortPubkey =
+-- | Test vectors from [BIP327 `key_sort_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/key_sort_vectors.json)
+testSortPubkeys :: TestTree
+testSortPubkeys =
   testGroup
     "sorting pubkeys"
     [testCase "BIP327 test vector" $ sortPubkeys parsePoints @=? parsePointsSorted]
