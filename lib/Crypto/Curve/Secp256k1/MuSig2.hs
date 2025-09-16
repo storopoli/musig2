@@ -22,6 +22,8 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   -- Pubkey functions
   sortPubkeys,
   aggPubkeys,
+  -- tweak functions
+  applyTweak,
   -- derived instances
   Monoid,
   Semigroup,
@@ -30,7 +32,7 @@ module Crypto.Curve.Secp256k1.MuSig2 (
 )
 where
 
-import Crypto.Curve.Secp256k1 (Projective, Pub, add, modQ, mul, serialize_point, _CURVE_Q, _CURVE_ZERO)
+import Crypto.Curve.Secp256k1 (Projective, Pub, add, modQ, mul, neg, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
 import Crypto.Hash.SHA256 (hash)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -82,10 +84,10 @@ mkKeyAggContext pks mTweak
         | aggPk == _CURVE_ZERO -> error "mkKeyAggContext: aggregated public key is point at infinity"
         | otherwise ->
             let coeffs' = map (`computeKeyAggCoef` pks) pks
-                parity = case mTweak of
-                  Just (XOnlyTweak _) -> not (isEvenPub aggPk)
-                  _ -> False
-             in KeyAggContext aggPk pks coeffs' mTweak parity
+                baseCtx = KeyAggContext aggPk pks coeffs' Nothing False
+             in case mTweak of
+                  Nothing -> baseCtx
+                  Just tweak -> applyTweak baseCtx tweak
 
 -- | Tweak that can be added to an aggregated 'Pub'key.
 data Tweak
@@ -146,6 +148,38 @@ aggPubkeys pks = pure $ weightedFoldMap aggPk (<>) pks
   coefs = map (`computeKeyAggCoef` pks) pks
   weightedFoldMap f op xs = foldr1 op (zipWith f coefs xs)
   aggPk i p = mul p i -- mul takes first point then scalar
+
+-- | Applies a tweak to a KeyAggContext and returns a new KeyAggContext following [BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+applyTweak :: KeyAggContext -> Tweak -> KeyAggContext
+applyTweak ctx newTweak =
+  let pubkey = q ctx
+      mAccTweak = tacc ctx
+      gaccIn = gacc ctx
+      accTweakVal = maybe 0 getTweak mAccTweak
+   in case newTweak of
+        PlainTweak t ->
+          -- Plain tweak: Q' = Q + t*G, tacc' = tacc + t, gacc' = gacc
+          let tweakedPk = add pubkey (mul _CURVE_G t)
+              newAccTweak = modQ (accTweakVal + t)
+           in if tweakedPk == _CURVE_ZERO
+                then error "applyTweak: the result of tweaking cannot be infinity"
+                else ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak)}
+        XOnlyTweak t ->
+          if isEvenPub pubkey
+            then
+              -- If pubkey has even Y, behave like plain tweak: Q' = Q + t*G, tacc' = tacc + t, gacc' = gacc
+              let tweakedPk = add pubkey (mul _CURVE_G t)
+                  newAccTweak = modQ (accTweakVal + t)
+               in if tweakedPk == _CURVE_ZERO
+                    then error "applyTweak: the result of tweaking cannot be infinity"
+                    else ctx{q = tweakedPk, tacc = Just (XOnlyTweak newAccTweak)}
+            else
+              -- If pubkey has odd Y: Q' = t*G - Q, tacc' = t - tacc, gacc' = !gacc
+              let tweakedPk = add (mul _CURVE_G t) (neg pubkey) -- t*G - Q
+                  newAccTweak = modQ (t - accTweakVal)
+               in if tweakedPk == _CURVE_ZERO
+                    then error "applyTweak: the result of tweaking cannot be infinity"
+                    else ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak), gacc = not gaccIn}
 
 -- INTERNAL FUNCTIONS
 

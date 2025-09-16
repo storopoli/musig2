@@ -2,10 +2,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Util (parsePoint, Arbitrary) where
+module Util (parsePoint, Arbitrary, extractXOnly, decodeHex) where
 
-import Crypto.Curve.Secp256k1 (Projective, Pub, mul, parse_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
+import Crypto.Curve.Secp256k1 (Projective, Pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import Data.Maybe (fromJust)
 import Test.Tasty.QuickCheck (Arbitrary (..), Gen, choose, frequency)
@@ -19,6 +20,16 @@ parsePoint :: ByteString -> Pub
 parsePoint s = case B16.decode s of
   Left _ -> error "cannot decode point"
   Right p -> (fromJust . parse_point) p
+
+-- | Extracts X-coordinate from compressed point serialization.
+extractXOnly :: Pub -> ByteString
+extractXOnly = BS.drop 1 . serialize_point
+
+-- | Decodes hex string to 'ByteString'.
+decodeHex :: ByteString -> ByteString
+decodeHex h = case B16.decode h of
+  Right bs -> bs
+  Left _ -> error "Invalid hex string in test vector"
 
 {- | 'Arbitrary' instance for 'Projective'.
 
