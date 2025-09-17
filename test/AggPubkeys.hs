@@ -37,12 +37,14 @@ testVectors =
 tweaks :: [Integer]
 tweaks =
   [ 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141 -- curve order (invalid)
+  , 0x252E4BD67410A76CDF933D30EAA1608214037F1B105A013ECCD3C5C184A6110B -- tweak that causes infinity
   ]
 
--- | Error test cases: (key indices, tweak index, is_xonly, expected error message)
+-- | Error test cases: (key indices, tweak index, is_xonly, expected error message).
 errorTestVectors :: [([Int], Int, Bool, String)]
 errorTestVectors =
   [ ([0, 1], 0, True, "The tweak must be less than n") -- Tweak is out of range
+  , ([6], 1, False, "the result of tweaking cannot be infinity") -- Intermediate tweaking result is point at infinity
   ]
 
 -- | Creates test case from vector data.
