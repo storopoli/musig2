@@ -35,6 +35,22 @@ repl:
 doc:
     cabal haddock --open
 
+# Test documentation coverage and quality
+test-docs:
+    #!/usr/bin/env bash
+    set -e
+    output=$(cabal haddock 2>&1)
+    echo "$output"
+    if echo "$output" | grep -q "Missing documentation"; then
+        echo "❌ Documentation test failed: missing documentation found"
+        exit 1
+    fi
+    if echo "$output" | grep -q " 0% "; then
+        echo "❌ Documentation test failed: 0% coverage found"
+        exit 1
+    fi
+    echo "✅ Documentation test passed"
+
 # Format workspace
 format: format-hs format-cabal format-nix
 
