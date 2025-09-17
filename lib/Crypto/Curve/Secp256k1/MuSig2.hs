@@ -75,15 +75,15 @@ the length of the list of keys is not bigger than 32 bits.
 -}
 mkKeyAggContext :: [Pub] -> Maybe Tweak -> KeyAggContext
 mkKeyAggContext pks mTweak
-  | null pks = error "mkKeyAggContext: empty public key list"
-  | length pks > fromIntegral (maxBound :: Word32) = error "mkKeyAggContext: too many public keys (max 2^32 - 1)"
-  | _CURVE_ZERO `elem` pks = error "mkKeyAggContext: public key at point of infinity"
-  | maybe False ((< 0) . getTweak) mTweak = error "mkKeyAggContext: tweak must be non-negative"
-  | maybe False ((>= _CURVE_Q) . getTweak) mTweak = error "mkKeyAggContext: The tweak must be less than n"
+  | null pks = error "musig2 (mkKeyAggContext): empty public key list"
+  | length pks > fromIntegral (maxBound :: Word32) = error "musig2 (mkKeyAggContext): too many public keys (max 2^32 - 1)"
+  | _CURVE_ZERO `elem` pks = error "musig2 (mkKeyAggContext): public key at point of infinity"
+  | maybe False ((< 0) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be non-negative"
+  | maybe False ((>= _CURVE_Q) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be less than n"
   | otherwise = case aggPubkeys pks of
-      Nothing -> error "mkKeyAggContext: failed to aggregate public keys"
+      Nothing -> error "musig2 (mkKeyAggContext): failed to aggregate public keys"
       Just aggPk
-        | aggPk == _CURVE_ZERO -> error "mkKeyAggContext: aggregated public key is point at infinity"
+        | aggPk == _CURVE_ZERO -> error "musig2 (mkKeyAggContext): aggregated public key is point at infinity"
         | otherwise ->
             let coeffs' = map (`computeKeyAggCoef` pks) pks
                 baseCtx = KeyAggContext aggPk pks coeffs' Nothing False
@@ -164,7 +164,7 @@ applyTweak ctx newTweak =
           let tweakedPk = add pubkey (mul _CURVE_G t)
               newAccTweak = modQ (accTweakVal + t)
            in if tweakedPk == _CURVE_ZERO
-                then error "applyTweak: the result of tweaking cannot be infinity"
+                then error "musig2 (applyTweak): result of tweaking cannot be infinity"
                 else ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak)}
         XOnlyTweak t ->
           if isEvenPub pubkey
@@ -173,14 +173,14 @@ applyTweak ctx newTweak =
               let tweakedPk = add pubkey (mul _CURVE_G t)
                   newAccTweak = modQ (accTweakVal + t)
                in if tweakedPk == _CURVE_ZERO
-                    then error "applyTweak: the result of tweaking cannot be infinity"
+                    then error "musig2 (applyTweak): result of tweaking cannot be infinity"
                     else ctx{q = tweakedPk, tacc = Just (XOnlyTweak newAccTweak)}
             else
               -- If pubkey has odd Y: Q' = t*G - Q, tacc' = t - tacc, gacc' = !gacc
               let tweakedPk = add (mul _CURVE_G t) (neg pubkey) -- t*G - Q
                   newAccTweak = modQ (t - accTweakVal)
                in if tweakedPk == _CURVE_ZERO
-                    then error "applyTweak: the result of tweaking cannot be infinity"
+                    then error "musig2 (applyTweak): result of tweaking cannot be infinity"
                     else ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak), gacc = not gaccIn}
 
 -- INTERNAL FUNCTIONS
@@ -232,4 +232,4 @@ isEvenPub :: Pub -> Bool
 isEvenPub pub = case BS.unpack (serialize_point pub) of
   (0x02 : _) -> True -- even y-coordinate
   (0x03 : _) -> False -- odd y-coordinate
-  _ -> error "Invalid compressed point format"
+  _ -> error "musig2 (isEvenPub): invalid compressed point format"
