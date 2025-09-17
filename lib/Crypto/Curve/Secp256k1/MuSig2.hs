@@ -44,13 +44,13 @@ data KeyAggContext = KeyAggContext
   { q :: Projective
   -- ^ Point representing the potentially tweaked aggregate public key: an elliptic curve point.
   , publicKeys :: [Pub]
-  -- ^ Ordered |List| of |Pub|keys.
+  -- ^ Ordered 'List' of 'Pub'keys.
   , coefficients :: [Integer]
-  -- ^ |List| of aggregation coefficients.
+  -- ^ 'List' of aggregation coefficients.
   , tacc :: Maybe Tweak
-  -- ^ accumulated tweak: an integer with \(0 \leq tacc < n\) where \(n\) is the curve order. |Nothing| means \(0\).
+  -- ^ accumulated tweak: an integer with \(0 \leq tacc < n\) where \(n\) is the curve order. 'Nothing' means \(0\).
   , gacc :: Bool
-  -- ^ parity accumulator: |False| means \(g = 1\), |True| means \(g = n-1\) where \(n\) is the curve order.
+  -- ^ parity accumulator: 'False' means \(g = 1\), 'True' means \(g = n-1\) where \(n\) is the curve order.
   }
 
 {- | Creates a 'KeyAggContext' from a 'Data.List' of 'Pub'keys.
@@ -223,7 +223,7 @@ hashTag t s = hash (taggedHash <> taggedHash <> s)
 bytesToInteger :: ByteString -> Integer
 bytesToInteger = BS.foldl' (\acc b -> acc * 256 + fromIntegral b) 0
 
--- | Checks if a |Pub|key is even.
+-- | Checks if a 'Pub'key is even.
 isEvenPub :: Pub -> Bool
 isEvenPub pub = case BS.unpack (serialize_point pub) of
   (0x02 : _) -> True -- even y-coordinate
