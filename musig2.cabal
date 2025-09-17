@@ -35,6 +35,7 @@ test-suite musig2-tests
   main-is:          Main.hs
   other-modules:
     AggPubkeys
+    ApplyTweaks
     MonoidProjective
     ParityPub
     SortPubkeys

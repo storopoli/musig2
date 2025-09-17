@@ -29,6 +29,8 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   Semigroup,
   -- utils/misc
   isEvenPub,
+  bytesToInteger,
+  hashTag,
 )
 where
 
