@@ -3,7 +3,7 @@
 module SortPubkeys (testSortPubkeys) where
 
 import Crypto.Curve.Secp256k1 (Pub)
-import Crypto.Curve.Secp256k1.MuSig2 (sortPubkeys)
+import Crypto.Curve.Secp256k1.MuSig2 (sortPublicKeys)
 import Test.Tasty
 import Test.Tasty.HUnit
 import Util (parsePoint)
@@ -37,4 +37,4 @@ testSortPubkeys :: TestTree
 testSortPubkeys =
   testGroup
     "sorting pubkeys"
-    [testCase "BIP327 test vector" $ sortPubkeys parsePoints @=? parsePointsSorted]
+    [testCase "BIP327 test vector" $ sortPublicKeys parsePoints @=? parsePointsSorted]

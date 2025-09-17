@@ -3,7 +3,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-x-partial #-}
-{-# OPTIONS_HADDOCK prune #-}
 
 {- |
 Module: Crypto.Curve.Secp256k1.MuSig2
@@ -20,13 +19,10 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   mkKeyAggContext,
   Tweak (..),
   -- Pubkey functions
-  sortPubkeys,
-  aggPubkeys,
+  sortPublicKeys,
+  aggPublicKeys,
   -- tweak functions
   applyTweak,
-  -- derived instances
-  Monoid,
-  Semigroup,
   -- utils/misc
   isEvenPub,
   bytesToInteger,
@@ -57,14 +53,14 @@ data KeyAggContext = KeyAggContext
   -- ^ parity accumulator: |False| means \(g = 1\), |True| means \(g = n-1\) where \(n\) is the curve order.
   }
 
-{- | Creates a 'KeyAggContext' from a 'List' of 'Pub'keys.
+{- | Creates a 'KeyAggContext' from a 'Data.List' of 'Pub'keys.
 
 The order in which the 'Pub'keys are presented will be preserved.
 A specific ordering of 'Pub'keys will uniquely determine the aggregated 'Pub'key.
 
 If the same keys are provided again in a different sorting order, a different
 aggregated 'Pub'key will result. It is recommended to sort keys ahead of time
-using 'sortPubkey' before creating a 'KeyAggContext'.
+using 'sortPublicKeys' before creating a 'KeyAggContext'.
 
 
 == NOTE
@@ -80,7 +76,7 @@ mkKeyAggContext pks mTweak
   | _CURVE_ZERO `elem` pks = error "musig2 (mkKeyAggContext): public key at point of infinity"
   | maybe False ((< 0) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be non-negative"
   | maybe False ((>= _CURVE_Q) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be less than n"
-  | otherwise = case aggPubkeys pks of
+  | otherwise = case aggPublicKeys pks of
       Nothing -> error "musig2 (mkKeyAggContext): failed to aggregate public keys"
       Just aggPk
         | aggPk == _CURVE_ZERO -> error "musig2 (mkKeyAggContext): aggregated public key is point at infinity"
@@ -110,21 +106,21 @@ getTweak (PlainTweak int) = int
 instance Ord Projective where
   compare x y = compare (serialize_point x) (serialize_point y)
 
--- | 'Semigroup' implementation of 'Projective' for algebraic sound combination of points.
+-- | 'Data.Semigroup' implementation of 'Projective' for algebraic sound combination of points.
 instance Semigroup Projective where
   (<>) :: Projective -> Projective -> Projective
   (<>) = add
 
--- | 'Monoid' implementation of 'Projective' for algebraic sound combination of points.
+-- | 'Data.Monoid' implementation of 'Projective' for algebraic sound combination of points.
 instance Monoid Projective where
   mempty :: Projective
   mempty = _CURVE_ZERO
 
--- | Lexicographically 'sort's a 'List' of 'Pub'keys.
-sortPubkeys :: [Pub] -> [Pub]
-sortPubkeys = sort
+-- | Lexicographically 'sort's a 'Data.List' of 'Pub'keys.
+sortPublicKeys :: [Pub] -> [Pub]
+sortPublicKeys = sort
 
-{- | Aggregates a 'List' of 'Pub'keys using the
+{- | Aggregates a 'Data.List' of 'Pub'keys using the
 [Key Aggregation algorithm in BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
 
 The algorith can be briefly described as
@@ -138,14 +134,14 @@ respective public key aggregation coefficient.
 
 == WARNING
 
-'aggPubKeys' do not sort the keys and aggregates public keys according to the
-ordering of the 'List' provided.
+'aggPublicKeys' do not sort the keys and aggregates public keys according to the
+ordering of the 'Data.List' provided.
 
 You should probably be using the recommended 'mkKeyAggContext'.
 -}
-aggPubkeys :: [Pub] -> Maybe Pub
-aggPubkeys [] = Nothing
-aggPubkeys pks = pure $ weightedFoldMap aggPk (<>) pks
+aggPublicKeys :: [Pub] -> Maybe Pub
+aggPublicKeys [] = Nothing
+aggPublicKeys pks = pure $ weightedFoldMap aggPk (<>) pks
  where
   coefs = map (`computeKeyAggCoef` pks) pks
   weightedFoldMap f op xs = foldr1 op (zipWith f coefs xs)
@@ -188,7 +184,7 @@ applyTweak ctx newTweak =
 {- | Computes the key aggregation coefficient from:
 
 1. Desired key to compute the key aggregation coefficient
-2. 'List' of 'Pub'keys
+2. 'Data.List' of 'Pub'keys
 -}
 computeKeyAggCoef :: Pub -> [Pub] -> Integer
 computeKeyAggCoef pk pks =
@@ -198,7 +194,7 @@ computeKeyAggCoef pk pks =
    in if pk == pk2 then 1 else modQ $ bytesToInteger taggedHash
 
 {- | Returns the first second key that is different from the first key in
-a 'List' of 'Pub'keys.
+a 'Data.List' of 'Pub'keys.
 
 Returns the point at infinity, i.e. zero'th point of monoidal identity.
 -}
@@ -208,7 +204,7 @@ getSecondKey pks =
       pk2 = find (/= pk1) pks
    in fromMaybe _CURVE_ZERO pk2
 
--- | "Taghashes" a 'List' of 'Projective's by concatenating all their 'ByteString' representations together.
+-- | "Taghashes" a 'Data.List' of 'Projective's by concatenating all their 'ByteString' representations together.
 hashProjectivesTag :: ByteString -> [Projective] -> ByteString
 hashProjectivesTag tag ps = hashTag tag $ foldl' (<>) "" byteStrings
  where

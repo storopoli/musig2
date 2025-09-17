@@ -31,6 +31,10 @@ deps:
 repl:
     cabal repl musig2
 
+# Builds the documentation with `haddock` and opens in the browser.
+doc:
+    cabal haddock --open
+
 # Format workspace
 format: format-hs format-cabal format-nix
 
