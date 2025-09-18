@@ -20,14 +20,20 @@ module Crypto.Curve.Secp256k1.MuSig2.Internal (
   -- utils/misc
   isEvenPub,
   bytesToInteger,
+  integerToBytes32,
+  xorByteStrings,
+  encodeLen,
   hashTag,
   hashProjectivesTag,
 ) where
 
 import Crypto.Curve.Secp256k1 (Projective, Pub, add, modQ, mul, serialize_point, _CURVE_ZERO)
 import Crypto.Hash.SHA256 (hash)
+import Data.Bits (shiftR, xor, (.&.))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import Data.ByteString.Builder (toLazyByteString, word64BE)
+import qualified Data.ByteString.Lazy as BSL
 import Data.Foldable (find, fold, toList)
 import Data.Maybe (fromMaybe)
 import Data.Sequence (Seq)
@@ -50,8 +56,6 @@ respective public key aggregation coefficient.
 
 'aggPublicKeys' do not sort the keys and aggregates public keys according to the
 ordering of the 'Traversable' provided.
-
-You should probably be using the recommended 'mkKeyAggContext'.
 -}
 aggPublicKeys :: (Traversable t) => t Pub -> Maybe Pub
 aggPublicKeys pks
@@ -109,6 +113,18 @@ hashTag t s = hash (taggedHash <> taggedHash <> s)
 -- | Converts a SHA-256 'ByteString' to an 'Integer'.
 bytesToInteger :: ByteString -> Integer
 bytesToInteger = BS.foldl' (\acc b -> acc * 256 + fromIntegral b) 0
+
+-- | Converts an 'Integer' to a 32-byte big-endian 'ByteString'.
+integerToBytes32 :: Integer -> ByteString
+integerToBytes32 i = BS.pack $ reverse [fromInteger (i `shiftR` (8 * j)) .&. 0xff | j <- [0 .. 31]]
+
+-- | @XOR@s two 'ByteString's of same length.
+xorByteStrings :: ByteString -> ByteString -> ByteString
+xorByteStrings = BS.packZipWith xor
+
+-- | Returns the 8-byte big-endian encoding of the length of a 'ByteString'.
+encodeLen :: ByteString -> ByteString
+encodeLen bs = BSL.toStrict . toLazyByteString . word64BE . fromIntegral $ BS.length bs
 
 -- | Checks if a 'Pub'key is even.
 isEvenPub :: Pub -> Bool

@@ -1,6 +1,8 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-x-partial #-}
 
@@ -24,18 +26,33 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   -- nonces
   SecNonce (..),
   mkSecNonce,
+  SecNonceGenParams (..),
+  defaultSecNonceGenParams,
+  secNonceGen,
+  secNonceGenWithRand,
   PubNonce (..),
   publicNonce,
 ) where
 
+import Control.Exception (ErrorCall (..), evaluate, throwIO, try)
 import Crypto.Curve.Secp256k1 (Projective, Pub, add, modQ, mul, neg, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2.Internal
+import Data.Binary.Put (
+  putWord32be,
+  putWord64be,
+  runPut,
+ )
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (toList)
+import Data.List (isPrefixOf)
+import Data.Maybe (fromMaybe)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Traversable ()
-import Data.Word (Word32)
+import Data.Word (Word32, Word64, Word8)
+import GHC.Generics (Generic)
 import System.Entropy (getEntropy)
 
 -- | Key aggregation context that holds the aggregated public key and a tweak, if applicable.
@@ -92,11 +109,11 @@ mkKeyAggContext pks mTweak
 data Tweak
   = -- | X-only tweak required by Taproot tweaking to add script paths to a Taproot output.
     -- See [BIP341](https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki).
-    XOnlyTweak Integer
+    XOnlyTweak !Integer
   | -- | Plain tweak that can be used to derive child aggregated 'Pub'keys per
     -- [BIP32](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)
-    PlainTweak Integer
-  deriving (Read, Show, Eq, Ord)
+    PlainTweak !Integer
+  deriving (Read, Show, Eq, Ord, Generic)
 
 -- | Retrieves the 'Integer' from 'Tweak'.
 getTweak :: Tweak -> Integer
@@ -160,17 +177,19 @@ signing. It is imperative that the same 'SecNonce' is not used to sign more
 than one message with the same key, as this would allow an observer to
 compute the private key used to create both signatures.
 
-Please see [BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+If you want to follow
+[BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
+suggestions, then use 'secNonceGen' otherwise use 'mkSecNonce'.
 -}
 data SecNonce = SecNonce
-  { k1 :: Integer
+  { k1 :: !Integer
   -- ^ First secret scalar.
-  , k2 :: Integer
+  , k2 :: !Integer
   -- ^ Second secret scalar.
   }
-  deriving (Read, Eq, Ord)
+  deriving (Read, Eq, Ord, Generic)
 
-{- | Generates a 'SecNonce' using the system's underlying Cryptographic Secure
+{- | Generates a 'SecNonce' using only the system's underlying Cryptographic Secure
 Pseudorandom Number Generator (CSPRNG) using the
 [@entropy@](https://hackage.haskell.org/package/entropy) package.
 
@@ -178,6 +197,10 @@ Pseudorandom Number Generator (CSPRNG) using the
 
 Make sure that you have access to a good CSPRNG in your system before calling
 this function.
+
+Note that this does not follow the
+[BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
+algorithm.
 -}
 mkSecNonce :: IO SecNonce
 mkSecNonce = do
@@ -185,6 +208,99 @@ mkSecNonce = do
   let k1' = bytesToInteger (BS.take 32 bytes)
       k2' = bytesToInteger (BS.drop 32 bytes)
   pure SecNonce{k1 = k1', k2 = k2'}
+
+-- | Required and Optional data to generate a 'SecNonce'.
+data SecNonceGenParams = SecNonceGenParams
+  { _pk :: Pub
+  -- ^ 'Pub'lic key: mandatory.
+  , _sk :: Maybe Integer
+  -- ^ Secret key: optional.
+  , _aggpk :: Maybe Pub
+  -- ^ Aggregated 'Pub'lic key: optional.
+  , _msg :: Maybe ByteString
+  -- ^ Message: optional.
+  , _extraIn :: Maybe ByteString
+  -- Auxiliary input: optional.
+  }
+  deriving (Eq, Ord, Generic)
+
+-- | Default approach to generate 'SecNonce's with the only required 'Pub'lic key.
+defaultSecNonceGenParams :: Pub -> SecNonceGenParams
+defaultSecNonceGenParams pk =
+  SecNonceGenParams
+    { _pk = pk
+    , _sk = Nothing
+    , _aggpk = Nothing
+    , _msg = Nothing
+    , _extraIn = Nothing
+    }
+
+{- | Generates a 'SecNonce' using the inputs and algorithms from
+[BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+-}
+secNonceGen :: SecNonceGenParams -> IO SecNonce
+secNonceGen params = loop
+ where
+  loop = do
+    rand <- getEntropy 32
+    eres <- try (evaluate (secNonceGenWithRand rand params))
+    case eres of
+      Right sn -> pure sn
+      Left (ErrorCall msg) | "musig2 (nonceGen): zero nonce generated" `isPrefixOf` msg -> loop
+      Left e -> throwIO e
+
+{- | Generates a 'SecNonce' using a given random 'ByteString' and the inputs and
+algorithms from
+[BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+
+== WARNING
+
+You should probably use 'secNonceGen'.
+Use this function if you really have a randomly-generated 'ByteString'.
+-}
+secNonceGenWithRand :: ByteString -> SecNonceGenParams -> SecNonce
+secNonceGenWithRand rand _params@(SecNonceGenParams{_pk = pkPoint, ..}) =
+  let
+    -- Step 2: Optional sk XOR (with tagged hash for safety)
+    rand' = case _sk of
+      Just skScalar ->
+        let skBytes = integerToBytes32 skScalar
+            auxHash = hashTag "MuSig/aux" rand
+         in xorByteStrings skBytes auxHash
+      Nothing -> rand
+
+    -- Steps 3-5: Defaults for optionals
+    pkBytes = serialize_point pkPoint
+    aggpkBytes = maybe "" (BS.drop 1 . serialize_point) _aggpk
+    msgPrefixed = case _msg of
+      Nothing -> BS.singleton 0
+      Just "" -> BS.singleton 0
+      Just m ->
+        let len = fromIntegral (BS.length m) :: Word64
+            lenBytes = LBS.toStrict . runPut $ putWord64be len
+         in BS.singleton 1 `BS.append` lenBytes `BS.append` m
+    extraInBytes = fromMaybe "" _extraIn
+
+    -- Steps 6-8: Hash for k1/k2
+    mkInput :: Word8 -> ByteString
+    mkInput i =
+      rand'
+        `BS.append` (BS.singleton . fromIntegral $ BS.length pkBytes)
+        `BS.append` pkBytes
+        `BS.append` (BS.singleton . fromIntegral $ BS.length aggpkBytes)
+        `BS.append` aggpkBytes
+        `BS.append` msgPrefixed
+        `BS.append` (LBS.toStrict . runPut . putWord32be . fromIntegral $ BS.length extraInBytes)
+        `BS.append` extraInBytes
+        `BS.append` BS.singleton i
+
+    k1' = modQ . bytesToInteger $ hashTag "MuSig/nonce" (mkInput 0)
+    k2' = modQ . bytesToInteger $ hashTag "MuSig/nonce" (mkInput 1)
+   in
+    -- Step 9: check for zero nonce and retry if so
+    if k1' == 0 || k2' == 0
+      then error "musig2 (nonceGen): zero nonce generated (retry)"
+      else SecNonce{k1 = k1', k2 = k2'}
 
 {- | Public nonce.
 
