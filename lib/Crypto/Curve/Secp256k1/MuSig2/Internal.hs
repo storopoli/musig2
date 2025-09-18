@@ -34,7 +34,8 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.ByteString.Builder (toLazyByteString, word64BE)
 import qualified Data.ByteString.Lazy as BSL
-import Data.Foldable (find, fold, toList)
+import Data.Foldable (Foldable (fold), find, toList)
+import qualified Data.Foldable as F
 import Data.Maybe (fromMaybe)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
@@ -68,7 +69,7 @@ aggPublicKeys pks
   -- Safe fold1 that handles empty sequences
   fold1WithDefault def xs = case Seq.viewl xs of
     Seq.EmptyL -> def
-    x Seq.:< xs' -> foldl add x xs'
+    x Seq.:< xs' -> F.foldl' add x xs'
 
 {- | Computes the key aggregation coefficient from:
 
