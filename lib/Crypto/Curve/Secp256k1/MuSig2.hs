@@ -30,12 +30,13 @@ module Crypto.Curve.Secp256k1.MuSig2 (
 
 import Crypto.Curve.Secp256k1 (Projective, Pub, add, modQ, mul, neg, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2.Internal
+import qualified Data.ByteString as BS
 import Data.Foldable (toList)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Traversable ()
 import Data.Word (Word32)
-import System.Random (newStdGen, uniformR)
+import System.Entropy (getEntropy)
 
 -- | Key aggregation context that holds the aggregated public key and a tweak, if applicable.
 data KeyAggContext = KeyAggContext
@@ -148,7 +149,7 @@ instance Monoid Projective where
   mempty :: Projective
   mempty = _CURVE_ZERO
 
--- | Lexicographically 'sort's a 'Traversable' of 'Pub'keys.
+-- | Lexicographically 'Data.Sequence.sort's a 'Traversable' of 'Pub'keys.
 sortPublicKeys :: (Traversable t) => t Pub -> Seq Pub
 sortPublicKeys = Seq.sort . Seq.fromList . toList
 
@@ -171,7 +172,7 @@ data SecNonce = SecNonce
 
 {- | Generates a 'SecNonce' using the system's underlying Cryptographic Secure
 Pseudorandom Number Generator (CSPRNG) using the
-[`random`](https://hackage.haskell.org/package/random) package.
+[@entropy@](https://hackage.haskell.org/package/entropy) package.
 
 == WARNING
 
@@ -180,9 +181,9 @@ this function.
 -}
 mkSecNonce :: IO SecNonce
 mkSecNonce = do
-  gen <- newStdGen
-  let (k1', gen') = uniformR (1, 2 ^ (256 :: Integer) - 1) gen
-      (k2', _) = uniformR (1, 2 ^ (256 :: Integer) - 1) gen'
+  bytes <- getEntropy 64 -- 64 bytes = 512 bits for two 256-bit scalars
+  let k1' = bytesToInteger (BS.take 32 bytes)
+      k2' = bytesToInteger (BS.drop 32 bytes)
   pure SecNonce{k1 = k1', k2 = k2'}
 
 {- | Public nonce.
@@ -191,7 +192,7 @@ Represents a public nonce derived from a secret nonce. It is composed
 of two public points, 'r1' and 'r2', derived by base-point multiplying
 the two scalars in a 'SecNonce'.
 
-'PubNonce' can be derived from a 'SecNonce' using 'publicNonce'.
+A 'PubNonce' can be derived from a 'SecNonce' using 'publicNonce'.
 -}
 data PubNonce = PubNonce
   { r1 :: Pub
