@@ -4,6 +4,7 @@ import AggPubkeys (testAggPubkeys)
 import ApplyTweaks (testApplyTweaks)
 import MonoidProjective (propertyMonoidProjective)
 import NonceGen (testNonceGen)
+import NonceGenProperty (propertyNonceGen)
 import ParityPub (testParityPub)
 import SortPubkeys (testSortPubkeys)
 import Test.Tasty
@@ -14,7 +15,7 @@ unitTests = testGroup "Unit Tests" [testSortPubkeys, testAggPubkeys, testParityP
 
 -- | Property tests.
 propertyTests :: TestTree
-propertyTests = testGroup "Property Tests" [propertyMonoidProjective]
+propertyTests = testGroup "Property Tests" [propertyMonoidProjective, propertyNonceGen]
 
 -- | Tests.
 tests :: TestTree
