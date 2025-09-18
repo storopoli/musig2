@@ -2,7 +2,7 @@
 
 module ParityPub (testParityPub) where
 
-import Crypto.Curve.Secp256k1.MuSig2 (isEvenPub)
+import Crypto.Curve.Secp256k1.MuSig2.Internal (isEvenPub)
 import Test.Tasty
 import Test.Tasty.HUnit
 import Util (parsePoint)

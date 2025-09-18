@@ -3,7 +3,8 @@
 module ApplyTweaks (testApplyTweaks) where
 
 import Crypto.Curve.Secp256k1 (Pub, parse_point)
-import Crypto.Curve.Secp256k1.MuSig2 (KeyAggContext (..), Tweak (..), applyTweak, bytesToInteger, hashTag, mkKeyAggContext)
+import Crypto.Curve.Secp256k1.MuSig2 (KeyAggContext (..), Tweak (..), applyTweak, mkKeyAggContext)
+import Crypto.Curve.Secp256k1.MuSig2.Internal (bytesToInteger, hashTag)
 import Data.ByteString (ByteString)
 import Data.Maybe (fromJust)
 import Test.Tasty
