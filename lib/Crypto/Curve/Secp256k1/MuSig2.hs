@@ -274,7 +274,6 @@ secNonceGenWithRand rand _params@(SecNonceGenParams{_pk = pkPoint, ..}) =
     aggpkBytes = maybe "" (BS.drop 1 . serialize_point) _aggpk
     msgPrefixed = case _msg of
       Nothing -> BS.singleton 0
-      Just "" -> BS.singleton 0
       Just m ->
         let len = fromIntegral (BS.length m) :: Word64
             lenBytes = LBS.toStrict . runPut $ putWord64be len

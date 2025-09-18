@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Util (parsePoint, Arbitrary, extractXOnly, decodeHex) where
+module Util (parsePoint, parseScalar, Arbitrary, extractXOnly, decodeHex) where
 
 import Crypto.Curve.Secp256k1 (Projective, Pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
 import Data.ByteString (ByteString)
@@ -20,6 +20,10 @@ parsePoint :: ByteString -> Pub
 parsePoint s = case B16.decode s of
   Left _ -> error "cannot decode point"
   Right p -> (fromJust . parse_point) p
+
+-- | Parses a hex 'ByteString' into an 'Integer' scalar.
+parseScalar :: ByteString -> Integer
+parseScalar = BS.foldl' (\acc b -> acc * 256 + fromIntegral b) 0 . decodeHex
 
 -- | Extracts X-coordinate from compressed point serialization.
 extractXOnly :: Pub -> ByteString

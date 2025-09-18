@@ -25,6 +25,7 @@ library
   build-depends:
     , base               >=4.9 && <5
     , base16-bytestring  >=1.0 && <1.1.0
+    , binary             >=0.8 && <0.9
     , bytestring         >=0.9 && <0.13
     , containers         >=0.6 && <0.9
     , entropy            >=0.4 && <0.5
@@ -42,6 +43,7 @@ test-suite musig2-tests
     Crypto.Curve.Secp256k1.MuSig2
     Crypto.Curve.Secp256k1.MuSig2.Internal
     MonoidProjective
+    NonceGen
     ParityPub
     SortPubkeys
     Util
@@ -50,6 +52,7 @@ test-suite musig2-tests
   build-depends:
     , base
     , base16-bytestring
+    , binary
     , bytestring
     , containers
     , entropy
