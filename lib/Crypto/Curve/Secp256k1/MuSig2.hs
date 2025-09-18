@@ -38,27 +38,29 @@ import Crypto.Curve.Secp256k1 (Projective, Pub, add, modQ, mul, neg, serialize_p
 import Crypto.Hash.SHA256 (hash)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.List (find, sort)
+import Data.Foldable (find, fold, toList)
 import Data.Maybe (fromMaybe)
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
+import Data.Traversable ()
 import Data.Word (Word32)
-import GHC.List (foldl')
 import System.Random (newStdGen, uniformR)
 
 -- | Key aggregation context that holds the aggregated public key and a tweak, if applicable.
 data KeyAggContext = KeyAggContext
   { q :: Projective
   -- ^ Point representing the potentially tweaked aggregate public key: an elliptic curve point.
-  , publicKeys :: [Pub]
-  -- ^ Ordered 'List' of 'Pub'keys.
-  , coefficients :: [Integer]
-  -- ^ 'List' of aggregation coefficients.
+  , publicKeys :: Seq Pub
+  -- ^ Ordered 'Seq' of 'Pub'keys.
+  , coefficients :: Seq Integer
+  -- ^ 'Seq' of aggregation coefficients.
   , tacc :: Maybe Tweak
   -- ^ accumulated tweak: an integer with \(0 \leq tacc < n\) where \(n\) is the curve order. 'Nothing' means \(0\).
   , gacc :: Bool
   -- ^ parity accumulator: 'False' means \(g = 1\), 'True' means \(g = n-1\) where \(n\) is the curve order.
   }
 
-{- | Creates a 'KeyAggContext' from a 'Data.List' of 'Pub'keys.
+{- | Creates a 'KeyAggContext' from a 'Traversable' of 'Pub'keys.
 
 The order in which the 'Pub'keys are presented will be preserved.
 A specific ordering of 'Pub'keys will uniquely determine the aggregated 'Pub'key.
@@ -72,25 +74,27 @@ using 'sortPublicKeys' before creating a 'KeyAggContext'.
 
 Internally it validates if all keys and the resulting aggregated key are not
 points at infinity, if the optional tweak is within the curve order, and if
-the length of the list of keys is not bigger than 32 bits.
+the length of the collection of keys is not bigger than 32 bits.
 -}
-mkKeyAggContext :: [Pub] -> Maybe Tweak -> KeyAggContext
+mkKeyAggContext :: (Traversable t) => t Pub -> Maybe Tweak -> KeyAggContext
 mkKeyAggContext pks mTweak
-  | null pks = error "musig2 (mkKeyAggContext): empty public key list"
-  | length pks > fromIntegral (maxBound :: Word32) = error "musig2 (mkKeyAggContext): too many public keys (max 2^32 - 1)"
-  | _CURVE_ZERO `elem` pks = error "musig2 (mkKeyAggContext): public key at point of infinity"
+  | Seq.null pks' = error "musig2 (mkKeyAggContext): empty public key collection"
+  | Seq.length pks' > fromIntegral (maxBound :: Word32) = error "musig2 (mkKeyAggContext): too many public keys (max 2^32 - 1)"
+  | _CURVE_ZERO `elem` pks' = error "musig2 (mkKeyAggContext): public key at point of infinity"
   | maybe False ((< 0) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be non-negative"
   | maybe False ((>= _CURVE_Q) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be less than n"
-  | otherwise = case aggPublicKeys pks of
+  | otherwise = case aggPublicKeys pks' of
       Nothing -> error "musig2 (mkKeyAggContext): failed to aggregate public keys"
       Just aggPk
         | aggPk == _CURVE_ZERO -> error "musig2 (mkKeyAggContext): aggregated public key is point at infinity"
         | otherwise ->
-            let coeffs' = map (`computeKeyAggCoef` pks) pks
-                baseCtx = KeyAggContext aggPk pks coeffs' Nothing False
+            let coeffs' = fmap (`computeKeyAggCoef` pks') pks'
+                baseCtx = KeyAggContext aggPk pks' coeffs' Nothing False
              in case mTweak of
                   Nothing -> baseCtx
                   Just tweak -> applyTweak baseCtx tweak
+ where
+  pks' = Seq.fromList (toList pks)
 
 -- | Tweak that can be added to an aggregated 'Pub'key.
 data Tweak
@@ -121,11 +125,11 @@ instance Monoid Projective where
   mempty :: Projective
   mempty = _CURVE_ZERO
 
--- | Lexicographically 'sort's a 'Data.List' of 'Pub'keys.
-sortPublicKeys :: [Pub] -> [Pub]
-sortPublicKeys = sort
+-- | Lexicographically 'sort's a 'Traversable' of 'Pub'keys.
+sortPublicKeys :: (Traversable t) => t Pub -> Seq Pub
+sortPublicKeys = Seq.sort . Seq.fromList . toList
 
-{- | Aggregates a 'Data.List' of 'Pub'keys using the
+{- | Aggregates a 'Traversable' of 'Pub'keys using the
 [Key Aggregation algorithm in BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
 
 The algorith can be briefly described as
@@ -140,17 +144,22 @@ respective public key aggregation coefficient.
 == WARNING
 
 'aggPublicKeys' do not sort the keys and aggregates public keys according to the
-ordering of the 'Data.List' provided.
+ordering of the 'Traversable' provided.
 
 You should probably be using the recommended 'mkKeyAggContext'.
 -}
-aggPublicKeys :: [Pub] -> Maybe Pub
-aggPublicKeys [] = Nothing
-aggPublicKeys pks = pure $ weightedFoldMap aggPk (<>) pks
+aggPublicKeys :: (Traversable t) => t Pub -> Maybe Pub
+aggPublicKeys pks
+  | Seq.null pksSeq = Nothing
+  | otherwise = Just $ fold1WithDefault _CURVE_ZERO (Seq.zipWith aggPk coefs pksSeq)
  where
-  coefs = map (`computeKeyAggCoef` pks) pks
-  weightedFoldMap f op xs = foldr1 op (zipWith f coefs xs)
+  pksSeq = Seq.fromList (toList pks)
+  coefs = fmap (`computeKeyAggCoef` pksSeq) pksSeq
   aggPk i p = mul p i -- mul takes first point then scalar
+  -- Safe fold1 that handles empty sequences
+  fold1WithDefault def xs = case Seq.viewl xs of
+    Seq.EmptyL -> def
+    x Seq.:< xs' -> foldl add x xs'
 
 -- | Applies a tweak to a KeyAggContext and returns a new KeyAggContext following [BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
 applyTweak :: KeyAggContext -> Tweak -> KeyAggContext
@@ -245,9 +254,9 @@ publicNonce secNonce =
 {- | Computes the key aggregation coefficient from:
 
 1. Desired key to compute the key aggregation coefficient
-2. 'Data.List' of 'Pub'keys
+2. 'Seq' of 'Pub'keys
 -}
-computeKeyAggCoef :: Pub -> [Pub] -> Integer
+computeKeyAggCoef :: Pub -> Seq Pub -> Integer
 computeKeyAggCoef pk pks =
   let pk2 = getSecondKey pks
       hashKeys = hashProjectivesTag "KeyAgg list" pks
@@ -255,21 +264,23 @@ computeKeyAggCoef pk pks =
    in if pk == pk2 then 1 else modQ $ bytesToInteger taggedHash
 
 {- | Returns the first second key that is different from the first key in
-a 'Data.List' of 'Pub'keys.
+a 'Seq' of 'Pub'keys.
 
 Returns the point at infinity, i.e. zero'th point of monoidal identity.
 -}
-getSecondKey :: [Pub] -> Pub
+getSecondKey :: Seq Pub -> Pub
 getSecondKey pks =
-  let pk1 = head pks
-      pk2 = find (/= pk1) pks
-   in fromMaybe _CURVE_ZERO pk2
+  case Seq.viewl pks of
+    Seq.EmptyL -> _CURVE_ZERO
+    pk1 Seq.:< _ ->
+      let pk2 = find (/= pk1) pks
+       in fromMaybe _CURVE_ZERO pk2
 
--- | "Taghashes" a 'Data.List' of 'Projective's by concatenating all their 'ByteString' representations together.
-hashProjectivesTag :: ByteString -> [Projective] -> ByteString
-hashProjectivesTag tag ps = hashTag tag $ foldl' (<>) "" byteStrings
+-- | "Taghashes" a 'Seq' of 'Projective's by concatenating all their 'ByteString' representations together.
+hashProjectivesTag :: ByteString -> Seq Projective -> ByteString
+hashProjectivesTag tag ps = hashTag tag $ fold byteStrings
  where
-  byteStrings = map serialize_point ps
+  byteStrings = fmap serialize_point ps
 
 {- | Tagged hashes used in [BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
 
