@@ -18,6 +18,10 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   KeyAggContext (..),
   mkKeyAggContext,
   Tweak (..),
+  SecNonce (..),
+  mkSecNonce,
+  PubNonce (..),
+  publicNonce,
   -- Pubkey functions
   sortPublicKeys,
   aggPublicKeys,
@@ -38,6 +42,7 @@ import Data.List (find, sort)
 import Data.Maybe (fromMaybe)
 import Data.Word (Word32)
 import GHC.List (foldl')
+import System.Random (newStdGen, uniformR)
 
 -- | Key aggregation context that holds the aggregated public key and a tweak, if applicable.
 data KeyAggContext = KeyAggContext
@@ -178,6 +183,62 @@ applyTweak ctx newTweak =
                in if tweakedPk == _CURVE_ZERO
                     then error "musig2 (applyTweak): result of tweaking cannot be infinity"
                     else ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak), gacc = not gaccIn}
+
+{- | Secret nonce.
+
+The secret nonce provides randomness, blinding a signer's private key when
+signing. It is imperative that the same 'SecNonce' is not used to sign more
+than one message with the same key, as this would allow an observer to
+compute the private key used to create both signatures.
+
+Please see [BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+-}
+data SecNonce = SecNonce
+  { k1 :: Integer
+  -- ^ First secret scalar.
+  , k2 :: Integer
+  -- ^ Second secret scalar.
+  }
+  deriving (Read, Eq, Ord)
+
+{- | Generates a 'SecNonce' using the system's underlying Cryptographic Secure
+Pseudorandom Number Generator (CSPRNG) using the
+[`random`](https://hackage.haskell.org/package/random) package.
+
+== WARNING
+
+Make sure that you have access to a good CSPRNG in your system before calling
+this function.
+-}
+mkSecNonce :: IO SecNonce
+mkSecNonce = do
+  gen <- newStdGen
+  let (k1', gen') = uniformR (1, 2 ^ (256 :: Integer) - 1) gen
+      (k2', _) = uniformR (1, 2 ^ (256 :: Integer) - 1) gen'
+  pure SecNonce{k1 = k1', k2 = k2'}
+
+{- | Public nonce.
+
+Represents a public nonce derived from a secret nonce. It is composed
+of two public points, 'r1' and 'r2', derived by base-point multiplying
+the two scalars in a 'SecNonce'.
+
+'PubNonce' can be derived from a 'SecNonce' using 'publicNonce'.
+-}
+data PubNonce = PubNonce
+  { r1 :: Pub
+  -- ^ First public point.
+  , r2 :: Pub
+  -- ^ Second public point.
+  }
+  deriving (Eq, Ord, Show)
+
+-- | Generates a 'PubNonce' from a 'SecNonce'.
+publicNonce :: SecNonce -> PubNonce
+publicNonce secNonce =
+  let r1' = mul _CURVE_G (k1 secNonce)
+      r2' = mul _CURVE_G (k2 secNonce)
+   in PubNonce{r1 = r1', r2 = r2'}
 
 -- INTERNAL FUNCTIONS
 
