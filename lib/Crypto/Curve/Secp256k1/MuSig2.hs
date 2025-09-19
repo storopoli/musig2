@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -323,3 +324,16 @@ publicNonce secNonce =
   let r1' = mul _CURVE_G (k1 secNonce)
       r2' = mul _CURVE_G (k2 secNonce)
    in PubNonce{r1 = r1', r2 = r2'}
+
+-- | 'Data.Semigroup' implementation of 'PubNonce' for algebraic sound combination of public nonces.
+instance Semigroup PubNonce where
+  (<>) :: PubNonce -> PubNonce -> PubNonce
+  a <> b = PubNonce{r1 = r1Agg, r2 = r2Agg}
+   where
+    r1Agg = add a.r1 b.r1
+    r2Agg = add a.r2 b.r2
+
+-- | 'Data.Monoid' implementation of 'PubNonce' for algebraic sound combination of public nonces.
+instance Monoid PubNonce where
+  mempty :: PubNonce
+  mempty = PubNonce{r1 = _CURVE_ZERO, r2 = _CURVE_ZERO}
