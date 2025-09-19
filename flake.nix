@@ -87,6 +87,7 @@
               };
 
               # Haskell
+              cabal2nix.enable = true;
               fourmolu.enable = true;
               cabal-fmt.enable = true;
               hlint.enable = true;
