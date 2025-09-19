@@ -6,7 +6,7 @@
 module Util (parsePoint, parseScalar, extractXOnly, decodeHex, Rand32 (..), Scalar (..)) where
 
 import Crypto.Curve.Secp256k1 (Projective, Pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
-import Crypto.Curve.Secp256k1.MuSig2 (SecNonceGenParams (..))
+import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecNonceGenParams (..))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
@@ -114,3 +114,11 @@ instance Show SecNonceGenParams where
           ++ ", _extraIn = "
           ++ showMaybeBS _extraIn
           ++ "}"
+
+-- | 'Arbitrary' instance for 'PubNonce'.
+instance Arbitrary PubNonce where
+  arbitrary :: Gen PubNonce
+  arbitrary = do
+    r1' <- arbitrary
+    r2' <- arbitrary
+    return $ PubNonce{r1 = r1', r2 = r2'}

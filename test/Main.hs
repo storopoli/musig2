@@ -3,6 +3,7 @@ module Main where
 import AggPubkeys (testAggPubkeys)
 import ApplyTweaks (testApplyTweaks)
 import MonoidProjective (propertyMonoidProjective)
+import MonoidPubNonce (propertyMonoidPubNonce)
 import NonceGen (testNonceGen)
 import NonceGenProperty (propertyNonceGen)
 import ParityPub (testParityPub)
@@ -15,7 +16,7 @@ unitTests = testGroup "Unit Tests" [testSortPubkeys, testAggPubkeys, testParityP
 
 -- | Property tests.
 propertyTests :: TestTree
-propertyTests = testGroup "Property Tests" [propertyMonoidProjective, propertyNonceGen]
+propertyTests = testGroup "Property Tests" [propertyMonoidProjective, propertyNonceGen, propertyMonoidPubNonce]
 
 -- | Tests.
 tests :: TestTree

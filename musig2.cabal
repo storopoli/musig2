@@ -43,6 +43,7 @@ test-suite musig2-tests
     Crypto.Curve.Secp256k1.MuSig2
     Crypto.Curve.Secp256k1.MuSig2.Internal
     MonoidProjective
+    MonoidPubNonce
     NonceGen
     NonceGenProperty
     ParityPub
