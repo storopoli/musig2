@@ -33,6 +33,7 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   secNonceGenWithRand,
   PubNonce (..),
   publicNonce,
+  aggNonces,
 ) where
 
 import Control.Exception (ErrorCall (..), evaluate, throwIO, try)
@@ -337,3 +338,13 @@ instance Semigroup PubNonce where
 instance Monoid PubNonce where
   mempty :: PubNonce
   mempty = PubNonce{r1 = _CURVE_ZERO, r2 = _CURVE_ZERO}
+
+{- | Aggregates a 'Traversable' of 'PubNonce's using the
+[Nonce Aggregation algorithm in BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+-}
+aggNonces :: (Traversable t) => t PubNonce -> Maybe PubNonce
+aggNonces nonces
+  | Seq.null noncesSeq = Nothing
+  | otherwise = Just $ foldl1 (<>) noncesSeq
+ where
+  noncesSeq = Seq.fromList (toList nonces)
