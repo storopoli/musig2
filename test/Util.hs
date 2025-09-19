@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Util (parsePoint, parseScalar, extractXOnly, decodeHex, Rand32 (..), Scalar (..)) where
+module Util (parsePoint, parseScalar, parsePubNonce, extractXOnly, decodeHex, Rand32 (..), Scalar (..)) where
 
 import Crypto.Curve.Secp256k1 (Projective, Pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecNonceGenParams (..))
@@ -122,3 +122,13 @@ instance Arbitrary PubNonce where
     r1' <- arbitrary
     r2' <- arbitrary
     return $ PubNonce{r1 = r1', r2 = r2'}
+
+{- | Parses a 'ByteString' into a 'PubNonce'.
+
+Mostly used to parse BIP327 test vectors.
+-}
+parsePubNonce :: ByteString -> PubNonce
+parsePubNonce bs = PubNonce{r1 = r1', r2 = r2'}
+ where
+  r1' = parsePoint $ BS.take 66 bs
+  r2' = parsePoint $ BS.drop 66 bs

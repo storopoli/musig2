@@ -38,6 +38,7 @@ test-suite musig2-tests
   hs-source-dirs:   test lib
   main-is:          Main.hs
   other-modules:
+    AggNonces
     AggPubkeys
     ApplyTweaks
     Crypto.Curve.Secp256k1.MuSig2
