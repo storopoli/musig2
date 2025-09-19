@@ -149,4 +149,4 @@ isEvenPub pub = case BS.unpack (serialize_point pub) of
 
 -- | Gets the X-coordinate from a 'Pub'lic key as 'ByteString'
 xBytes :: Pub -> ByteString
-xBytes pk = BS.take 33 $ serialize_point pk
+xBytes pk = BS.drop 1 $ serialize_point pk

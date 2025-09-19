@@ -19,8 +19,10 @@ TODO: add description
 -}
 module Crypto.Curve.Secp256k1.MuSig2 (
   -- Main types and functions
+  sign,
   SecKey (..),
   PartialSignature,
+  partialSigVerify,
   -- MuSig2 Session
   SessionContext,
   mkSessionContext,
@@ -45,7 +47,7 @@ module Crypto.Curve.Secp256k1.MuSig2 (
 ) where
 
 import Control.Exception (ErrorCall (..), evaluate, throwIO, try)
-import Crypto.Curve.Secp256k1 (Projective, Pub, add, modQ, mul, neg, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
+import Crypto.Curve.Secp256k1 (Projective, Pub, add, derive_pub, modQ, mul, neg, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2.Internal
 import Data.Binary.Put (
   putWord32be,
@@ -65,23 +67,138 @@ import Data.Word (Word32, Word64, Word8)
 import GHC.Generics (Generic)
 import System.Entropy (getEntropy)
 
+{- | Compute a partial signature on a message.
+
+The partial signature returned from this function is a potentially-zero
+scalar value which can then be passed to other signers for verification
+and aggregation.
+-}
+sign ::
+  -- | Secret nonce.
+  SecNonce ->
+  -- | Secret key.
+  SecKey ->
+  -- | Session context.
+  SessionContext ->
+  -- | Partial signature.
+  PartialSignature
+sign secnonce sk ctx =
+  let
+    publicKeys = pks ctx
+    tweaks' = tweaks ctx
+    nonce = getSigningNonce ctx
+    e = bytesToInteger $ getSigningHash ctx
+    keyCtx = if Seq.null tweaks' then mkKeyAggContext publicKeys Nothing else foldl applyTweak (mkKeyAggContext publicKeys Nothing) tweaks'
+    aggPk = q keyCtx
+    oddAggPk = not $ isEvenPub aggPk
+    parity = gacc keyCtx
+    k1 = if secnonce.k1 == 0 then error "musig2 (sign): first secret scalar k1 is zero" else secnonce.k1
+    k2 = if secnonce.k2 == 0 then error "musig2 (sign): first secret scalar k2 is zero" else secnonce.k2
+    d' = if unSecKey sk == 0 then error "musig2 (sign): secret key is zero" else unSecKey sk
+    -- `d` is negated if exactly one of the parity accumulator OR the aggregated pubkey has odd parity.
+    d = if parity /= oddAggPk then _CURVE_Q - d' else d'
+    p = derive_pub d' -- Use original secret key for public key derivation
+    a = computeKeyAggCoef p publicKeys
+    -- if has_even_Y(R):
+    --   k = k1 + b*k2
+    -- else:
+    --   k = (n-k1) + b(n-k2)
+    --     = n - (k1 + b*k2)
+    b = getSigningNonceCoeff ctx
+    k = if isEvenPub nonce then k1 + b * k2 else _CURVE_Q - (k1 + b * k2)
+    s = modQ (k + e * a * d)
+    pubNonce' = PubNonce (mul _CURVE_G secnonce.k1) (mul _CURVE_G secnonce.k2)
+   in
+    if partialSigVerifyInternal s pubNonce' p ctx then s else error "musig2 (sign): could not verify partial signature against public nonce, public key and session context"
+
 {- | A partial signature which is a scalar in the range \(0 \leq x < n\) where
 \(n\) is the curve order.
 -}
 type PartialSignature = Integer
 
+-- | Verifies a 'PartialSignature'.
+partialSigVerify ::
+  (Traversable t) =>
+  -- | Partial signature to verify.
+  PartialSignature ->
+  -- | 'PubNonce's
+  t PubNonce ->
+  -- | 'Pub'lic keys.
+  t Pub ->
+  -- | 'Tweak's
+  t Tweak ->
+  -- | Message.
+  ByteString ->
+  -- | Index of the signer.
+  Int ->
+  -- | If the partial signature is valid.
+  Bool
+partialSigVerify partial nonces pks tweaks msg idx =
+  let aggNonce = fromJust $ aggNonces nonces
+      ctx = mkSessionContext aggNonce pks tweaks msg
+      noncesList = toList nonces
+      pk = if idx < length pks then toList pks !! idx else error "musig2 (partialSigVerify): signer index out of range of the list of public keys"
+      pubnonce = if idx < length noncesList then noncesList !! idx else error "musig2 (partialSigVerify): signer index out of range of the list of public nonces"
+   in partialSigVerifyInternal partial pubnonce pk ctx
+
+{- | Verifies a 'PartialSignature'.
+
+== WARNING
+
+Internal function you should probably be using 'partialSigVerify' instead.
+-}
+partialSigVerifyInternal ::
+  -- | Partial signature to verify.
+  PartialSignature ->
+  -- | Public nonce.
+  PubNonce ->
+  -- | 'Pub'lic key.
+  Pub ->
+  -- | MuSig2 session context.
+  SessionContext ->
+  -- | If the partial signature is valid.
+  Bool
+partialSigVerifyInternal partial pubnonce pk ctx =
+  let
+    publicKeys = pks ctx
+    tweaks' = tweaks ctx
+    keyCtx = if Seq.null tweaks' then mkKeyAggContext publicKeys Nothing else foldl applyTweak (mkKeyAggContext publicKeys Nothing) tweaks'
+    aggPk = q keyCtx
+    oddAggPk = not $ isEvenPub aggPk
+    parity = gacc keyCtx
+    e = bytesToInteger $ getSigningHash ctx
+    r1' = pubnonce.r1
+    r2' = pubnonce.r2
+    b = getSigningNonceCoeff ctx
+    finalNonce = getSigningNonce ctx -- This is the final aggregate nonce used for evenness check
+    s = if partial < 0 || partial >= _CURVE_Q then error "musig2 (partialSigVerifyInternal): partial signature must be within curve order." else partial
+    -- Reconstruct the individual's effective nonce: R_s1 + b * R_s2
+    re' = add r1' $ mul r2' b
+    -- Negate individual nonce if final aggregate nonce has odd Y
+    re = if isEvenPub finalNonce then re' else neg re'
+    a = computeKeyAggCoef pk publicKeys
+    -- Calculate g factor: 1 if aggregate pubkey has even Y, n-1 if odd
+    g = if oddAggPk then _CURVE_Q - 1 else 1
+    -- Apply parity accumulator: gacc is accumulated parity factor
+    gaccFactor = if parity then _CURVE_Q - 1 else 1
+    g' = modQ (g * gaccFactor)
+    sG = mul _CURVE_G s
+    sG' = re `add` mul pk (modQ (e * a * g'))
+   in
+    sG == sG'
+
 -- | Secret key.
 newtype SecKey = SecKey Integer
   deriving (Read, Eq, Ord, Num, Generic)
+
+-- | Gets the secret 'Integer' from a 'SecKey'.
+unSecKey :: SecKey -> Integer
+unSecKey (SecKey int) = int
 
 -- | Key aggregation context that holds the aggregated public key and a tweak, if applicable.
 data KeyAggContext = KeyAggContext
   { q :: Projective
   -- ^ Point representing the potentially tweaked aggregate public key: an elliptic curve point.
-  , publicKeys :: Seq Pub
-  -- ^ Ordered 'Seq' of 'Pub'keys.
-  , coefficients :: Seq Integer
-  -- ^ 'Seq' of aggregation coefficients.
   , tacc :: Maybe Tweak
   -- ^ accumulated tweak: an integer with \(0 \leq tacc < n\) where \(n\) is the curve order. 'Nothing' means \(0\).
   , gacc :: Bool
@@ -122,8 +239,7 @@ mkKeyAggContext pks mTweak
       Just aggPk
         | aggPk == _CURVE_ZERO -> error "musig2 (mkKeyAggContext): aggregated public key is point at infinity"
         | otherwise ->
-            let coeffs' = fmap (`computeKeyAggCoef` pks') pks'
-                baseCtx = KeyAggContext aggPk pks' coeffs' Nothing False
+            let baseCtx = KeyAggContext aggPk Nothing False
              in case mTweak of
                   Nothing -> baseCtx
                   Just tweak -> applyTweak baseCtx tweak
@@ -193,15 +309,26 @@ mkSessionContext aggNonce pks tweaks msg
 getSigningNonce :: SessionContext -> Projective
 getSigningNonce ctx =
   let
-    q = fromJust $ aggPublicKeys ctx.pks
-    msg = ctx.msg
-    preimage = (serialize_point aggNonce'.r1 <> serialize_point aggNonce'.r2) <> xBytes q <> msg
-    b = bytesToInteger $ hashTagModQ "MuSig/noncecoef" preimage
+    b = getSigningNonceCoeff ctx
     aggNonce = ctx.aggNonce
     aggNonce' = if aggNonce.r1 == _CURVE_ZERO then PubNonce _CURVE_G aggNonce.r2 else aggNonce
     finalNonce = add aggNonce'.r1 (mul aggNonce'.r2 b)
    in
     if finalNonce == _CURVE_ZERO then _CURVE_G else finalNonce
+
+{- | Gets the signing nonce coefficient following
+[BIP327 algorithm and recommendations](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#dealing-with-infinity-in-nonce-aggregation).
+-}
+getSigningNonceCoeff :: SessionContext -> Integer
+getSigningNonceCoeff ctx =
+  let
+    aggNonce = ctx.aggNonce
+    aggNonce' = if aggNonce.r1 == _CURVE_ZERO then PubNonce _CURVE_G aggNonce.r2 else aggNonce
+    q = fromJust $ aggPublicKeys ctx.pks
+    msg = ctx.msg
+    preimage = (serialize_point aggNonce'.r1 <> serialize_point aggNonce'.r2) <> xBytes q <> msg
+   in
+    bytesToInteger $ hashTagModQ "MuSig/noncecoef" preimage
 
 {- | Gets the signing challenge hash as a 'ByteString' following
 [BIP327 algorithm](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
