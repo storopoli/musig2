@@ -71,7 +71,7 @@ data KeyAggContext = KeyAggContext
   -- ^ parity accumulator: 'False' means \(g = 1\), 'True' means \(g = n-1\) where \(n\) is the curve order.
   }
 
-{- | Creates a 'KeyAggContext' from a 'Traversable' of 'Pub'keys.
+{- | Creates a 'KeyAggContext'.
 
 The order in which the 'Pub'keys are presented will be preserved.
 A specific ordering of 'Pub'keys will uniquely determine the aggregated 'Pub'key.
@@ -80,20 +80,26 @@ If the same keys are provided again in a different sorting order, a different
 aggregated 'Pub'key will result. It is recommended to sort keys ahead of time
 using 'sortPublicKeys' before creating a 'KeyAggContext'.
 
-
 == NOTE
 
 Internally it validates if all keys and the resulting aggregated key are not
 points at infinity, if the optional tweak is within the curve order, and if
 the length of the collection of keys is not bigger than 32 bits.
 -}
-mkKeyAggContext :: (Traversable t) => t Pub -> Maybe Tweak -> KeyAggContext
+mkKeyAggContext ::
+  (Traversable t) =>
+  -- | 'Pub'keys.
+  t Pub ->
+  -- | Optional 'Tweak' value.
+  Maybe Tweak ->
+  -- | Resulting 'KeyAggContext'.
+  KeyAggContext
 mkKeyAggContext pks mTweak
   | Seq.null pks' = error "musig2 (mkKeyAggContext): empty public key collection"
   | Seq.length pks' > fromIntegral (maxBound :: Word32) = error "musig2 (mkKeyAggContext): too many public keys (max 2^32 - 1)"
   | _CURVE_ZERO `elem` pks' = error "musig2 (mkKeyAggContext): public key at point of infinity"
   | maybe False ((< 0) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be non-negative"
-  | maybe False ((>= _CURVE_Q) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be less than n"
+  | maybe False ((>= _CURVE_Q) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be less than curve order"
   | otherwise = case aggPublicKeys pks' of
       Nothing -> error "musig2 (mkKeyAggContext): failed to aggregate public keys"
       Just aggPk

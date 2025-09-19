@@ -43,7 +43,7 @@ tweaks =
 -- | Error test cases: (key indices, tweak index, is_xonly, expected error message).
 errorTestVectors :: [([Int], Int, Bool, String)]
 errorTestVectors =
-  [ ([0, 1], 0, True, "tweak must be less than n") -- Tweak is out of range
+  [ ([0, 1], 0, True, "tweak must be less than curve order") -- Tweak is out of range
   , ([6], 1, False, "result of tweaking cannot be infinity") -- Intermediate tweaking result is point at infinity
   ]
 
