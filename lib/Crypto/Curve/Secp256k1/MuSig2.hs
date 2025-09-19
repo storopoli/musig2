@@ -17,6 +17,9 @@ MuSig2 signing Haskell library.
 TODO: add description
 -}
 module Crypto.Curve.Secp256k1.MuSig2 (
+  -- MuSig2 Session
+  SessionContext (..),
+  mkSessionContext,
   -- Key aggregation
   KeyAggContext (..),
   mkKeyAggContext,
@@ -49,7 +52,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (toList)
 import Data.List (isPrefixOf)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromJust, fromMaybe)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Traversable ()
@@ -112,6 +115,97 @@ mkKeyAggContext pks mTweak
                   Just tweak -> applyTweak baseCtx tweak
  where
   pks' = Seq.fromList (toList pks)
+
+-- | Session aggregation context that holds the relevant context for a MuSig2 signing session.
+data SessionContext = SessionContext
+  { aggNonce :: PubNonce
+  -- ^ Aggregated 'PubNonce'.
+  , pks :: Seq Pub
+  -- ^ Ordered 'Seq' of 'Pub'keys.
+  , tweaks :: Seq Tweak
+  -- ^ 'Seq' of 'Tweak's.
+  , msg :: ByteString
+  -- ^ Message to be signed.
+  }
+
+{- | Creates a 'SessionContext'.
+
+The order in which the 'Pub'keys are presented will be preserved.
+A specific ordering of 'Pub'keys will uniquely determine the aggregated 'Pub'key.
+
+If the same keys are provided again in a different sorting order, a different
+aggregated 'Pub'key will result. It is recommended to sort keys ahead of time
+using 'sortPublicKeys' before creating a 'SessionContext'.
+
+== NOTE
+
+Internally it validates if all keys, the resulting aggregated key, and the
+aggregated public nonce are not points at infinity, if the tweaks are within the
+curve order, and if the length of the collection of keys is not bigger than 32 bits.
+-}
+mkSessionContext ::
+  (Traversable t) =>
+  -- | Aggregated 'PubNonce'.
+  PubNonce ->
+  -- | 'Pub'keys.
+  t Pub ->
+  -- | 'Tweak's.
+  t Tweak ->
+  -- | Message to be signed.
+  ByteString ->
+  -- | Resulting 'SessionContext'.
+  SessionContext
+mkSessionContext aggNonce pks tweaks msg
+  | Seq.null pks' = error "musig2 (mkSessionContext): empty public key collection"
+  | Seq.length pks' > fromIntegral (maxBound :: Word32) = error "musig2 (mkSessionContext): too many public keys (max 2^32 - 1)"
+  | _CURVE_ZERO `elem` pks' = error "musig2 (mkSessionContext): public key at point of infinity"
+  | Seq.length tweaks' > fromIntegral (maxBound :: Word32) = error "musig2 (mkSessionContext): too many tweaks (max 2^32 - 1)"
+  | any checkNeg tweaks' = error "musig2 (mkSessionContext): tweaks must be non-negative"
+  | any checkOrder tweaks' = error "musig2 (mkSessionContext): tweaks must be less than curve order"
+  | otherwise = case aggPublicKeys pks' of
+      Nothing -> error "musig2 (mkSessionContext): failed to aggregate public keys"
+      Just aggPk
+        | aggPk == _CURVE_ZERO -> error "musig2 (mkSessionContext): aggregated public key is point at infinity"
+        | otherwise -> SessionContext aggNonce pks' tweaks' msg
+ where
+  pks' = Seq.fromList (toList pks)
+  tweaks' = Seq.fromList (toList tweaks)
+  checkNeg = (< 0) . getTweak
+  checkOrder = (>= _CURVE_Q) . getTweak
+
+{- | Gets the signing nonce as a 'Projective' following
+[BIP327 algorithm and recommendations](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#dealing-with-infinity-in-nonce-aggregation).
+-}
+getSigningNonce :: SessionContext -> Projective
+getSigningNonce ctx =
+  let
+    q = fromJust $ aggPublicKeys ctx.pks
+    msg = ctx.msg
+    preimage = (serialize_point aggNonce'.r1 <> serialize_point aggNonce'.r2) <> xBytes q <> msg
+    b = bytesToInteger $ hashTagModQ "MuSig/noncecoef" preimage
+    aggNonce = ctx.aggNonce
+    aggNonce' = if aggNonce.r1 == _CURVE_ZERO then PubNonce _CURVE_G aggNonce.r2 else aggNonce
+    finalNonce = add aggNonce'.r1 (mul aggNonce'.r2 b)
+   in
+    if finalNonce == _CURVE_ZERO then _CURVE_G else finalNonce
+
+{- | Gets the signing challenge hash as a 'ByteString' following
+[BIP327 algorithm](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+
+Note that the signing challenge hash is the naming convention from the
+[MuSig2 paper, page 6](https://eprint.iacr.org/2020/1261).
+In the BIP327 it is referred as @e@.
+-}
+getSigningHash :: SessionContext -> ByteString
+getSigningHash ctx =
+  let
+    q = xBytes $ fromJust $ aggPublicKeys ctx.pks
+    msg = ctx.msg
+    nonce = getSigningNonce ctx
+    r = xBytes nonce
+    preimage = r <> q <> msg
+   in
+    hashTagModQ "BIP0340/challenge" preimage
 
 -- | Tweak that can be added to an aggregated 'Pub'key.
 data Tweak
@@ -327,10 +421,7 @@ data PubNonce = PubNonce
 
 -- | Generates a 'PubNonce' from a 'SecNonce'.
 publicNonce :: SecNonce -> PubNonce
-publicNonce secNonce =
-  let r1' = mul _CURVE_G (k1 secNonce)
-      r2' = mul _CURVE_G (k2 secNonce)
-   in PubNonce{r1 = r1', r2 = r2'}
+publicNonce secNonce = PubNonce (mul _CURVE_G (k1 secNonce)) (mul _CURVE_G (k2 secNonce))
 
 -- | 'Data.Semigroup' implementation of 'PubNonce' for algebraic sound combination of public nonces.
 instance Semigroup PubNonce where
@@ -343,7 +434,7 @@ instance Semigroup PubNonce where
 -- | 'Data.Monoid' implementation of 'PubNonce' for algebraic sound combination of public nonces.
 instance Monoid PubNonce where
   mempty :: PubNonce
-  mempty = PubNonce{r1 = _CURVE_ZERO, r2 = _CURVE_ZERO}
+  mempty = PubNonce _CURVE_ZERO _CURVE_ZERO
 
 {- | Aggregates a 'Traversable' of 'PubNonce's using the
 [Nonce Aggregation algorithm in BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).

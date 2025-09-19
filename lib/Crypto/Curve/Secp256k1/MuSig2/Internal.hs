@@ -19,11 +19,13 @@ module Crypto.Curve.Secp256k1.MuSig2.Internal (
   getSecondKey,
   -- utils/misc
   isEvenPub,
+  xBytes,
   bytesToInteger,
   integerToBytes32,
   xorByteStrings,
   encodeLen,
   hashTag,
+  hashTagModQ,
   hashProjectivesTag,
 ) where
 
@@ -111,6 +113,17 @@ hashTag t s = hash (taggedHash <> taggedHash <> s)
  where
   taggedHash = hash t
 
+{- | Tagged hashes used in [BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
+modulo the curve order.
+
+Takes a tag and a string.
+-}
+hashTagModQ :: ByteString -> ByteString -> ByteString
+hashTagModQ t s = hashModQ taggedHash
+ where
+  taggedHash = hashTag t s
+  hashModQ h = integerToBytes32 $ modQ $ bytesToInteger h
+
 -- | Converts a SHA-256 'ByteString' to an 'Integer'.
 bytesToInteger :: ByteString -> Integer
 bytesToInteger = BS.foldl' (\acc b -> acc * 256 + fromIntegral b) 0
@@ -133,3 +146,7 @@ isEvenPub pub = case BS.unpack (serialize_point pub) of
   (0x02 : _) -> True -- even y-coordinate
   (0x03 : _) -> False -- odd y-coordinate
   _ -> error "musig2 (isEvenPub): invalid compressed point format"
+
+-- | Gets the X-coordinate from a 'Pub'lic key as 'ByteString'
+xBytes :: Pub -> ByteString
+xBytes pk = BS.take 33 $ serialize_point pk
