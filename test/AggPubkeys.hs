@@ -4,7 +4,7 @@ module AggPubkeys (testAggPubkeys) where
 
 import Control.Exception (ErrorCall (..), evaluate, try)
 import Crypto.Curve.Secp256k1 (Pub)
-import Crypto.Curve.Secp256k1.MuSig2 (KeyAggContext (..), Tweak (..), mkKeyAggContext)
+import Crypto.Curve.Secp256k1.MuSig2 (Tweak (..), aggregatedPubkey, mkKeyAggContext)
 import Data.ByteString (ByteString)
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -55,7 +55,7 @@ makeTestCase i (indices, expected) =
  where
   selectedKeys = map (inputPubkeys !!) indices
   keyAggCtx = mkKeyAggContext selectedKeys Nothing
-  aggPk = case keyAggCtx of KeyAggContext{q = qVal} -> qVal
+  aggPk = aggregatedPubkey keyAggCtx
 
 -- | Creates error test case from vector data.
 makeErrorTestCase :: Int -> ([Int], Int, Bool, String) -> TestTree

@@ -22,11 +22,12 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   SecKey (..),
   PartialSignature,
   -- MuSig2 Session
-  SessionContext (..),
+  SessionContext,
   mkSessionContext,
   -- Key aggregation
-  KeyAggContext (..),
+  KeyAggContext,
   mkKeyAggContext,
+  aggregatedPubkey,
   -- tweak functions
   applyTweak,
   Tweak (..),
@@ -284,6 +285,10 @@ instance Monoid Projective where
 -- | Lexicographically 'Data.Sequence.sort's a 'Traversable' of 'Pub'keys.
 sortPublicKeys :: (Traversable t) => t Pub -> Seq Pub
 sortPublicKeys = Seq.sort . Seq.fromList . toList
+
+-- | Gets the aggregated public key from a 'KeyAggContext'.
+aggregatedPubkey :: KeyAggContext -> Pub
+aggregatedPubkey = q
 
 {- | Secret nonce.
 

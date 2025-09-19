@@ -3,7 +3,7 @@
 module ApplyTweaks (testApplyTweaks) where
 
 import Crypto.Curve.Secp256k1 (Pub, parse_point)
-import Crypto.Curve.Secp256k1.MuSig2 (KeyAggContext (..), Tweak (..), applyTweak, mkKeyAggContext)
+import Crypto.Curve.Secp256k1.MuSig2 (Tweak (..), aggregatedPubkey, applyTweak, mkKeyAggContext)
 import Crypto.Curve.Secp256k1.MuSig2.Internal (bytesToInteger, hashTag)
 import Data.ByteString (ByteString)
 import Data.Maybe (fromJust)
@@ -49,7 +49,7 @@ testTweakSequence =
     -- Apply fourth plain tweak
     let tweak4 = PlainTweak 0x1969AD73CC177FA0B4FCED6DF1F7BF9907E665FDE9BA196A74FED0A3CF5AEF9D
         finalKeyAggCtx = applyTweak keyAggCtx4 tweak4
-        finalAggPk = q finalKeyAggCtx
+        finalAggPk = aggregatedPubkey finalKeyAggCtx
         expected = fromJust $ parse_point $ decodeHex "0269434B39A026A4AAC9E6C1AEBDD3993FFA581C8F7F21B6FAAE15608057F5CE85"
 
     expected @=? finalAggPk
@@ -59,13 +59,13 @@ testTaprootTweak :: TestTree
 testTaprootTweak =
   testCase "Taproot tweak with merkle root" $ do
     let keyAggCtx = mkKeyAggContext testPubkeys Nothing
-        originalPk = q keyAggCtx
+        originalPk = aggregatedPubkey keyAggCtx
         merkleRootBytes = decodeHex "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         -- Compute proper taproot tweak hash
         taprootTweakValue = computeTaprootTweak originalPk merkleRootBytes
         taprootTweak = XOnlyTweak taprootTweakValue
         tweakedCtx = applyTweak keyAggCtx taprootTweak
-        tweakedPk = q tweakedCtx
+        tweakedPk = aggregatedPubkey tweakedCtx
         expected = fromJust $ parse_point $ decodeHex "024650cca5e389f62e960f66ca0400927a7727fc6e84b9c38a1fd9a80271377ceb"
 
     expected @=? tweakedPk
