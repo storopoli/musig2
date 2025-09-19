@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -17,6 +18,8 @@ MuSig2 signing Haskell library.
 TODO: add description
 -}
 module Crypto.Curve.Secp256k1.MuSig2 (
+  -- Main types and functions
+  SecKey (..),
   -- MuSig2 Session
   SessionContext (..),
   mkSessionContext,
@@ -59,6 +62,10 @@ import Data.Traversable ()
 import Data.Word (Word32, Word64, Word8)
 import GHC.Generics (Generic)
 import System.Entropy (getEntropy)
+
+-- | Secret key.
+newtype SecKey = SecKey Integer
+  deriving (Read, Eq, Ord, Num, Generic)
 
 -- | Key aggregation context that holds the aggregated public key and a tweak, if applicable.
 data KeyAggContext = KeyAggContext
@@ -315,7 +322,7 @@ mkSecNonce = do
 data SecNonceGenParams = SecNonceGenParams
   { _pk :: Pub
   -- ^ 'Pub'lic key: mandatory.
-  , _sk :: Maybe Integer
+  , _sk :: Maybe SecKey
   -- ^ Secret key: optional.
   , _aggpk :: Maybe Pub
   -- ^ Aggregated 'Pub'lic key: optional.
@@ -365,7 +372,7 @@ secNonceGenWithRand rand _params@(SecNonceGenParams{_pk = pkPoint, ..}) =
   let
     -- Step 2: Optional sk XOR (with tagged hash for safety)
     rand' = case _sk of
-      Just skScalar ->
+      Just (SecKey skScalar) ->
         let skBytes = integerToBytes32 skScalar
             auxHash = hashTag "MuSig/aux" rand
          in xorByteStrings skBytes auxHash

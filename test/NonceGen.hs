@@ -5,7 +5,7 @@
 module NonceGen (testNonceGen) where
 
 import Crypto.Curve.Secp256k1 (Pub)
-import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecNonce (..), SecNonceGenParams (..), publicNonce, secNonceGenWithRand)
+import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce (..), SecNonceGenParams (..), publicNonce, secNonceGenWithRand)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Test.Tasty
@@ -86,7 +86,7 @@ makeNonceGenTestCase i NonceGenTestVector{..} =
     let params =
           SecNonceGenParams
             { _pk = pk
-            , _sk = sk
+            , _sk = fmap SecKey sk
             , _aggpk = aggpk
             , _msg = msg
             , _extraIn = extra_in

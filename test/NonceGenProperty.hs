@@ -4,7 +4,7 @@
 module NonceGenProperty (propertyNonceGen) where
 
 import Crypto.Curve.Secp256k1 (mul, _CURVE_G, _CURVE_Q)
-import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecNonce (..), SecNonceGenParams (..), publicNonce, secNonceGenWithRand)
+import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce (..), SecNonceGenParams (..), publicNonce, secNonceGenWithRand)
 import Crypto.Curve.Secp256k1.MuSig2.Internal (hashTag, integerToBytes32, xorByteStrings)
 import Data.ByteString ()
 import Test.Tasty
@@ -37,7 +37,7 @@ prop_correctPubNonce (Rand32 rand) params =
 prop_skConsistency :: Rand32 -> SecNonceGenParams -> Scalar -> Property
 prop_skConsistency (Rand32 rand) params (Scalar sk) =
   let paramsNoSk = params{_sk = Nothing}
-      paramsWithSk = params{_sk = Just sk}
+      paramsWithSk = params{_sk = Just (SecKey sk)}
       auxHash = hashTag "MuSig/aux" rand
       skBytes = integerToBytes32 sk
       rand' = xorByteStrings skBytes auxHash

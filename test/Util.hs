@@ -6,7 +6,7 @@
 module Util (parsePoint, parseScalar, parsePubNonce, extractXOnly, decodeHex, Rand32 (..), Scalar (..)) where
 
 import Crypto.Curve.Secp256k1 (Projective, Pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
-import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecNonceGenParams (..))
+import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonceGenParams (..))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
@@ -82,13 +82,16 @@ Slightly biased towards 'Just' than 'Nothing'.
 instance Arbitrary SecNonceGenParams where
   arbitrary = do
     _pk <- arbitrary
-    _sk <- frequency [(2, return Nothing), (3, Just . getScalar <$> arbitrary)]
+    _sk <- frequency [(2, return Nothing), (3, genMaybeSecKey)]
     _aggpk <- frequency [(2, return Nothing), (3, Just <$> arbitrary)]
     _msg <- frequency [(2, return Nothing), (3, Just <$> arbitraryBS)]
     _extraIn <- frequency [(2, return Nothing), (3, Just <$> arbitraryBS)]
     return SecNonceGenParams{..}
    where
-    getScalar (Scalar i) = i
+    genMaybeSecKey :: Gen (Maybe SecKey)
+    genMaybeSecKey = do
+      (Scalar i) <- arbitrary
+      return $ Just (SecKey i)
 
 {- | 'Show' instance for 'SecNonceGenParams'.
 
