@@ -20,6 +20,7 @@ TODO: add description
 module Crypto.Curve.Secp256k1.MuSig2 (
   -- Main types and functions
   SecKey (..),
+  PartialSignature,
   -- MuSig2 Session
   SessionContext (..),
   mkSessionContext,
@@ -62,6 +63,11 @@ import Data.Traversable ()
 import Data.Word (Word32, Word64, Word8)
 import GHC.Generics (Generic)
 import System.Entropy (getEntropy)
+
+{- | A partial signature which is a scalar in the range \(0 \leq x < n\) where
+\(n\) is the curve order.
+-}
+type PartialSignature = Integer
 
 -- | Secret key.
 newtype SecKey = SecKey Integer
