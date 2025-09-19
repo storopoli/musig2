@@ -20,7 +20,7 @@ supply proper string representations.
 -}
 parsePoint :: ByteString -> Pub
 parsePoint s = case B16.decode s of
-  Left _ -> error "cannot decode point"
+  Left p -> error $ "cannot decode point" <> show p
   Right p -> (fromJust . parse_point) p
 
 -- | Parses a hex 'ByteString' into an 'Integer' scalar.
