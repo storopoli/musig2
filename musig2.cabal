@@ -10,7 +10,8 @@ category:        Cryptography
 build-type:      Simple
 tested-with:     GHC ==9.8.4
 extra-doc-files: CHANGELOG
-description:     MuSig2 signing Haskell library. TODO: add description.
+description:
+  Pure BIP0327 MuSig2 (partial)signatures with tweak support on the elliptic curve secp256k1.
 
 source-repository head
   type:     git

@@ -14,8 +14,9 @@ Copyright: (c) 2025 Jose Storopoli
 License: MIT
 Maintainer: Jose Storopoli <jose@storopoli.com>
 
-MuSig2 signing Haskell library.
-TODO: add description
+Pure [BIP0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
+[MuSig2](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
+(partial)signatures with tweak support on the elliptic curve secp256k1.
 -}
 module Crypto.Curve.Secp256k1.MuSig2 (
   -- Main types and functions
