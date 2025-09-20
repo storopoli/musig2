@@ -50,9 +50,10 @@ test-suite musig2-tests
     ParityPub
     SignVerify
     SortPubkeys
+    Tweak
     Util
 
-  ghc-options:      -rtsopts -Wall
+  ghc-options:      -rtsopts -Wall -O2
   build-depends:
     , base
     , base16-bytestring

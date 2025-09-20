@@ -6,7 +6,7 @@
 module Util (parsePoint, parseScalar, parsePubNonce, extractXOnly, decodeHex, Rand32 (..), Scalar (..)) where
 
 import Crypto.Curve.Secp256k1 (Projective, Pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
-import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonceGenParams (..))
+import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce (..), SecNonceGenParams (..))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
@@ -61,6 +61,10 @@ arbitraryBS = do
   len <- choose (0, 1024) :: Gen Int -- Limit size to avoid excessive memory use
   BS.pack <$> vectorOf len arbitrary
 
+-- | 'Arbitrary' instance for 'ByteString'.
+instance Arbitrary ByteString where
+  arbitrary = arbitraryBS
+
 -- | Scalar type for testing secret keys.
 newtype Scalar = Scalar Integer deriving (Show, Eq)
 
@@ -95,8 +99,7 @@ instance Arbitrary SecNonceGenParams where
 
 {- | 'Show' instance for 'SecNonceGenParams'.
 
-Does not leak the secret key, and it is only used for testing purposes,
-hence why it is only defined in this test module.
+Should only used for testing purposes, hence why it is only defined in this test module.
 -}
 instance Show SecNonceGenParams where
   show (SecNonceGenParams _pk _sk _aggpk _msg _extraIn) =
@@ -105,7 +108,7 @@ instance Show SecNonceGenParams where
           Just bs -> "Just (ByteString of length " ++ show (BS.length bs) ++ ")"
         showSk msk = case msk of
           Nothing -> "Nothing"
-          Just _ -> "Just <hidden>"
+          Just sk -> "Just " ++ show sk
      in "SecNonceGenParams {_pk = "
           ++ show _pk
           ++ ", _sk = "
@@ -125,6 +128,34 @@ instance Arbitrary PubNonce where
     r1' <- arbitrary
     r2' <- arbitrary
     return $ PubNonce{r1 = r1', r2 = r2'}
+
+-- | 'Arbitrary' instace of 'SecNonce'.
+instance Arbitrary SecNonce where
+  arbitrary = do
+    k1 <- choose (1, _CURVE_Q - 1) -- Ensure non-zero
+    k2 <- choose (1, _CURVE_Q - 1) -- Ensure non-zero
+    return SecNonce{k1 = k1, k2 = k2}
+
+{- | 'Show' instance for 'SecNonce'.
+
+Should only used for testing purposes, hence why it is only defined in this test module.
+-}
+instance Show SecNonce where
+  show (SecNonce k1 k2) =
+    "SecNonce { k1=" ++ show k1 ++ ", k2=" ++ show k2 ++ "}"
+
+-- | 'Arbitrary' instace of 'SecKey'.
+instance Arbitrary SecKey where
+  arbitrary = do
+    sk <- choose (1, _CURVE_Q - 1) -- Ensure non-zero
+    return (SecKey sk)
+
+{- | 'Show' instance for 'SecKey'.
+
+Should only used for testing purposes, hence why it is only defined in this test module.
+-}
+instance Show SecKey where
+  show (SecKey int) = "SecKey " ++ show int
 
 {- | Parses a 'ByteString' into a 'PubNonce'.
 
