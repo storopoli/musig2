@@ -79,7 +79,9 @@ benchmark musig2-bench
   ghc-options:      -rtsopts -O2 -Wall -fno-warn-orphans
   build-depends:
     , base
+    , base16-bytestring
     , bytestring
     , criterion
     , deepseq
     , musig2
+    , ppad-secp256k1
