@@ -49,6 +49,7 @@ test-suite musig2-tests
     NonceGenProperty
     ParityPub
     SignVerify
+    SignVerifyProperty
     SortPubkeys
     Tweak
     Util
