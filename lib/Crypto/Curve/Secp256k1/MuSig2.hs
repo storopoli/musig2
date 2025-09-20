@@ -86,11 +86,14 @@ aggPartials partials ctx =
     keyCtx = if Seq.null tweaks' then mkKeyAggContext publicKeys Nothing else foldl applyTweak (mkKeyAggContext publicKeys Nothing) tweaks'
     aggPk = q keyCtx
     taccVal = maybe 0 getTweak $ tacc keyCtx
+    gaccVal = gacc keyCtx
     -- BIP 327: Let g = 1 if has_even_y(Q), otherwise let g = -1 mod n
     g = if isEvenPub aggPk then 1 else _CURVE_Q - 1
+    -- Apply accumulated parity factor
+    g' = modQ (g * gaccVal)
     sSum = modQ $ sum partials
-    -- BIP 327: Let s = s₁ + ... + sᵤ + e⋅g⋅tacc mod n
-    s = modQ (sSum + e * g * taccVal)
+    -- BIP 327: Let s = s₁ + ... + sᵤ + e⋅g'⋅tacc mod n
+    s = modQ (sSum + e * g' * taccVal)
     left = xBytes nonce
     right = integerToBytes32 s
    in
@@ -354,9 +357,16 @@ getSigningNonceCoeff ctx =
   let
     aggNonce = ctx.aggNonce
     aggNonce' = if aggNonce.r1 == _CURVE_ZERO then PubNonce _CURVE_G aggNonce.r2 else aggNonce
-    q = fromJust $ aggPublicKeys ctx.pks
+    -- Apply tweaks to get the correct aggregate public key
+    keyCtx =
+      if Seq.null (tweaks ctx)
+        then mkKeyAggContext (pks ctx) Nothing
+        else foldl applyTweak (mkKeyAggContext (pks ctx) Nothing) (tweaks ctx)
+    aggPubKey = q keyCtx
     msg = ctx.msg
-    preimage = (serialize_point aggNonce'.r1 <> serialize_point aggNonce'.r2) <> xBytes q <> msg
+    nonceBytes = serialize_point aggNonce'.r1 <> serialize_point aggNonce'.r2
+    qBytes = xBytes aggPubKey
+    preimage = nonceBytes <> qBytes <> msg
    in
     bytesToInteger $ hashTagModQ "MuSig/noncecoef" preimage
 
@@ -370,11 +380,17 @@ In the BIP327 it is referred as @e@.
 getSigningHash :: SessionContext -> ByteString
 getSigningHash ctx =
   let
-    q = xBytes $ fromJust $ aggPublicKeys ctx.pks
+    -- Apply tweaks to get the correct aggregate public key
+    keyCtx =
+      if Seq.null (tweaks ctx)
+        then mkKeyAggContext (pks ctx) Nothing
+        else foldl applyTweak (mkKeyAggContext (pks ctx) Nothing) (tweaks ctx)
+    aggPubKey = q keyCtx
+    qBytes = xBytes aggPubKey
     msg = ctx.msg
     nonce = getSigningNonce ctx
     r = xBytes nonce
-    preimage = r <> q <> msg
+    preimage = r <> qBytes <> msg
    in
     hashTagModQ "BIP0340/challenge" preimage
 
@@ -402,19 +418,19 @@ applyTweak ctx newTweak =
       accTweakVal = maybe 0 getTweak mAccTweak
    in case newTweak of
         PlainTweak t ->
-          -- Plain tweak: g = 1, Q' = g*Q + t*G, tacc' = tacc + g*t, gacc' = g*gacc
+          -- Plain tweak: g = 1, Q' = g*Q + t*G, tacc' = t + g*tacc, gacc' = g*gacc
           let g = 1
               tweakedPk = add (mul pubkey g) (mul _CURVE_G t)
-              newAccTweak = modQ (accTweakVal + (g * t))
+              newAccTweak = modQ (t + (g * accTweakVal))
               newGacc = modQ (g * gaccIn)
            in if tweakedPk == _CURVE_ZERO
                 then error "musig2 (applyTweak): result of tweaking cannot be infinity"
                 else ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak), gacc = newGacc}
         XOnlyTweak t ->
-          -- X-only tweak: g = 1 if even Y, g = n-1 if odd Y
+          -- X-only tweak: g = 1 if even Y, g = n-1 if odd Y, tacc' = t + g*tacc
           let g = if isEvenPub pubkey then 1 else _CURVE_Q - 1
               tweakedPk = add (mul pubkey g) (mul _CURVE_G t)
-              newAccTweak = modQ (accTweakVal + (g * t))
+              newAccTweak = modQ (t + (g * accTweakVal))
               newGacc = modQ (g * gaccIn)
            in if tweakedPk == _CURVE_ZERO
                 then error "musig2 (applyTweak): result of tweaking cannot be infinity"
