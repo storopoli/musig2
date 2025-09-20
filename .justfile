@@ -3,6 +3,7 @@ alias b := build
 alias l := lint
 alias t := test
 alias fmt := format
+alias bench := benchmark
 
 default:
     just --list
@@ -82,3 +83,19 @@ format-nix:
     else
         echo "nixfmt not installed, skipping format"
     fi
+
+# Run benchmarks
+benchmark:
+    cabal bench musig2-bench
+
+# Run benchmarks with HTML output
+benchmark-html:
+    cabal bench musig2-bench --benchmark-options="--output benchmark_results.html"
+
+# Run specific benchmark group (e.g., just benchmark-group key_aggregation)
+benchmark-group GROUP:
+    cabal bench musig2-bench --benchmark-options="-m pattern {{GROUP}}"
+
+# List all available benchmarks
+benchmark-list:
+    cabal bench musig2-bench --benchmark-options="-l"
