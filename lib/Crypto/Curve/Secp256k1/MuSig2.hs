@@ -23,6 +23,7 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   SecKey (..),
   PartialSignature,
   partialSigVerify,
+  aggPartials,
   -- MuSig2 Session
   SessionContext,
   mkSessionContext,
@@ -66,6 +67,34 @@ import Data.Traversable ()
 import Data.Word (Word32, Word64, Word8)
 import GHC.Generics (Generic)
 import System.Entropy (getEntropy)
+
+-- | Aggregates 'PartialSignature's into a 64-byte Schnorr signature.
+aggPartials ::
+  (Traversable t) =>
+  -- | Partial signatures.
+  t PartialSignature ->
+  -- | Session context.
+  SessionContext ->
+  -- | 64-byte Schnorr signature.
+  ByteString
+aggPartials partials ctx =
+  let
+    publicKeys = pks ctx
+    tweaks' = tweaks ctx
+    nonce = getSigningNonce ctx
+    e = bytesToInteger $ getSigningHash ctx
+    keyCtx = if Seq.null tweaks' then mkKeyAggContext publicKeys Nothing else foldl applyTweak (mkKeyAggContext publicKeys Nothing) tweaks'
+    aggPk = q keyCtx
+    taccVal = maybe 0 getTweak $ tacc keyCtx
+    -- BIP 327: Let g = 1 if has_even_y(Q), otherwise let g = -1 mod n
+    g = if isEvenPub aggPk then 1 else _CURVE_Q - 1
+    sSum = modQ $ sum partials
+    -- BIP 327: Let s = s₁ + ... + sᵤ + e⋅g⋅tacc mod n
+    s = modQ (sSum + e * g * taccVal)
+    left = xBytes nonce
+    right = integerToBytes32 s
+   in
+    left <> right
 
 {- | Compute a partial signature on a message.
 
