@@ -91,12 +91,14 @@ sign secnonce sk ctx =
     keyCtx = if Seq.null tweaks' then mkKeyAggContext publicKeys Nothing else foldl applyTweak (mkKeyAggContext publicKeys Nothing) tweaks'
     aggPk = q keyCtx
     oddAggPk = not $ isEvenPub aggPk
-    parity = gacc keyCtx
+    gaccVal = gacc keyCtx
     k1 = if secnonce.k1 == 0 then error "musig2 (sign): first secret scalar k1 is zero" else secnonce.k1
     k2 = if secnonce.k2 == 0 then error "musig2 (sign): first secret scalar k2 is zero" else secnonce.k2
     d' = if unSecKey sk == 0 then error "musig2 (sign): secret key is zero" else unSecKey sk
     -- `d` is negated if exactly one of the parity accumulator OR the aggregated pubkey has odd parity.
-    d = if parity /= oddAggPk then _CURVE_Q - d' else d'
+    -- gaccVal == 1 means no negation, gaccVal == n-1 means negation
+    parityFromGacc = gaccVal /= 1
+    d = if parityFromGacc /= oddAggPk then _CURVE_Q - d' else d'
     p = derive_pub d' -- Use original secret key for public key derivation
     a = computeKeyAggCoef p publicKeys
     -- if has_even_Y(R):
@@ -165,7 +167,7 @@ partialSigVerifyInternal partial pubnonce pk ctx =
     keyCtx = if Seq.null tweaks' then mkKeyAggContext publicKeys Nothing else foldl applyTweak (mkKeyAggContext publicKeys Nothing) tweaks'
     aggPk = q keyCtx
     oddAggPk = not $ isEvenPub aggPk
-    parity = gacc keyCtx
+    gaccVal = gacc keyCtx
     e = bytesToInteger $ getSigningHash ctx
     r1' = pubnonce.r1
     r2' = pubnonce.r2
@@ -180,8 +182,7 @@ partialSigVerifyInternal partial pubnonce pk ctx =
     -- Calculate g factor: 1 if aggregate pubkey has even Y, n-1 if odd
     g = if oddAggPk then _CURVE_Q - 1 else 1
     -- Apply parity accumulator: gacc is accumulated parity factor
-    gaccFactor = if parity then _CURVE_Q - 1 else 1
-    g' = modQ (g * gaccFactor)
+    g' = modQ (g * gaccVal)
     sG = mul _CURVE_G s
     sG' = re `add` mul pk (modQ (e * a * g'))
    in
@@ -201,8 +202,8 @@ data KeyAggContext = KeyAggContext
   -- ^ Point representing the potentially tweaked aggregate public key: an elliptic curve point.
   , tacc :: Maybe Tweak
   -- ^ accumulated tweak: an integer with \(0 \leq tacc < n\) where \(n\) is the curve order. 'Nothing' means \(0\).
-  , gacc :: Bool
-  -- ^ parity accumulator: 'False' means \(g = 1\), 'True' means \(g = n-1\) where \(n\) is the curve order.
+  , gacc :: !Integer
+  -- ^ parity accumulator: 1 means \(g = 1\), \(n-1\) means \(g = n-1\) where \(n\) is the curve order.
   }
 
 {- | Creates a 'KeyAggContext'.
@@ -239,7 +240,7 @@ mkKeyAggContext pks mTweak
       Just aggPk
         | aggPk == _CURVE_ZERO -> error "musig2 (mkKeyAggContext): aggregated public key is point at infinity"
         | otherwise ->
-            let baseCtx = KeyAggContext aggPk Nothing False
+            let baseCtx = KeyAggContext aggPk Nothing 1
              in case mTweak of
                   Nothing -> baseCtx
                   Just tweak -> applyTweak baseCtx tweak
@@ -372,28 +373,23 @@ applyTweak ctx newTweak =
       accTweakVal = maybe 0 getTweak mAccTweak
    in case newTweak of
         PlainTweak t ->
-          -- Plain tweak: Q' = Q + t*G, tacc' = tacc + t, gacc' = gacc
-          let tweakedPk = add pubkey (mul _CURVE_G t)
-              newAccTweak = modQ (accTweakVal + t)
+          -- Plain tweak: g = 1, Q' = g*Q + t*G, tacc' = tacc + g*t, gacc' = g*gacc
+          let g = 1
+              tweakedPk = add (mul pubkey g) (mul _CURVE_G t)
+              newAccTweak = modQ (accTweakVal + (g * t))
+              newGacc = modQ (g * gaccIn)
            in if tweakedPk == _CURVE_ZERO
                 then error "musig2 (applyTweak): result of tweaking cannot be infinity"
-                else ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak)}
+                else ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak), gacc = newGacc}
         XOnlyTweak t ->
-          if isEvenPub pubkey
-            then
-              -- If pubkey has even Y, behave like plain tweak: Q' = Q + t*G, tacc' = tacc + t, gacc' = gacc
-              let tweakedPk = add pubkey (mul _CURVE_G t)
-                  newAccTweak = modQ (accTweakVal + t)
-               in if tweakedPk == _CURVE_ZERO
-                    then error "musig2 (applyTweak): result of tweaking cannot be infinity"
-                    else ctx{q = tweakedPk, tacc = Just (XOnlyTweak newAccTweak)}
-            else
-              -- If pubkey has odd Y: Q' = t*G - Q, tacc' = t - tacc, gacc' = !gacc
-              let tweakedPk = add (mul _CURVE_G t) (neg pubkey) -- t*G - Q
-                  newAccTweak = modQ (t - accTweakVal)
-               in if tweakedPk == _CURVE_ZERO
-                    then error "musig2 (applyTweak): result of tweaking cannot be infinity"
-                    else ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak), gacc = not gaccIn}
+          -- X-only tweak: g = 1 if even Y, g = n-1 if odd Y
+          let g = if isEvenPub pubkey then 1 else _CURVE_Q - 1
+              tweakedPk = add (mul pubkey g) (mul _CURVE_G t)
+              newAccTweak = modQ (accTweakVal + (g * t))
+              newGacc = modQ (g * gaccIn)
+           in if tweakedPk == _CURVE_ZERO
+                then error "musig2 (applyTweak): result of tweaking cannot be infinity"
+                else ctx{q = tweakedPk, tacc = Just (XOnlyTweak newAccTweak), gacc = newGacc}
 
 -- | Manual 'Ord' implementation of 'Projective' for lexicography sorting.
 instance Ord Projective where
