@@ -7,7 +7,7 @@ import Crypto.Curve.Secp256k1.MuSig2 (SecKey (..), SecNonce (..), Tweak (..), ag
 import Data.ByteString (ByteString)
 import Data.Maybe (fromJust)
 import Test.Tasty
-import Test.Tasty.QuickCheck as QC
+import Test.Tasty.QuickCheck
 import Util ()
 
 propertySignVerifyTweak :: TestTree
@@ -22,55 +22,49 @@ propertySignVerifyTweak =
     ]
 
 -- | Property: Generated signatures with tweaks are in the valid range \([0, Q-1]\).
-prop_validSignatureRangeWithTweaks :: SecNonce -> SecKey -> [Tweak] -> ByteString -> Property
-prop_validSignatureRangeWithTweaks secNonce secKey@(SecKey sk) tweaks msg =
-  length tweaks
-    <= 5
-    ==> let pubkey -- Limit tweaks to reasonable number
-              =
-              derive_pub sk
-            pubNonce = publicNonce secNonce
-            pubNonces = [pubNonce]
-            pubkeys = [pubkey]
-            aggNonce = fromJust $ aggNonces pubNonces
-            ctx = mkSessionContext aggNonce pubkeys tweaks msg
-            sig = sign secNonce secKey ctx
-         in (sig >= 0) .&&. (sig < _CURVE_Q)
+prop_validSignatureRangeWithTweaks :: SecNonce -> SecKey -> Property
+prop_validSignatureRangeWithTweaks secNonce secKey@(SecKey sk) =
+  forAll (resize 5 $ listOf arbitrary) $ \tweaks ->
+    forAll arbitrary $ \msg ->
+      let pubkey = derive_pub sk
+          pubNonce = publicNonce secNonce
+          pubNonces = [pubNonce]
+          pubkeys = [pubkey]
+          aggNonce = fromJust $ aggNonces pubNonces
+          ctx = mkSessionContext aggNonce pubkeys tweaks msg
+          sig = sign secNonce secKey ctx
+       in (sig >= 0) .&&. (sig < _CURVE_Q)
 
 -- | Property: A signature created with tweaks verifies with 'partialSigVerify'.
-prop_signVerifyRoundtripWithTweaks :: SecNonce -> SecKey -> [Tweak] -> ByteString -> Property
-prop_signVerifyRoundtripWithTweaks secNonce secKey@(SecKey sk) tweaks msg =
-  length tweaks
-    <= 5
-    ==> let pubkey -- Limit tweaks to reasonable number
-              =
-              derive_pub sk
-            pubNonce = publicNonce secNonce
-            pubNonces = [pubNonce]
-            pubkeys = [pubkey]
-            aggNonce = fromJust $ aggNonces pubNonces
-            ctx = mkSessionContext aggNonce pubkeys tweaks msg
-            sig = sign secNonce secKey ctx
-            signerIndex = 0 -- We're always the first signer in this test
-            result = partialSigVerify sig pubNonces pubkeys tweaks msg signerIndex
-         in result === True
+prop_signVerifyRoundtripWithTweaks :: SecNonce -> SecKey -> Property
+prop_signVerifyRoundtripWithTweaks secNonce secKey@(SecKey sk) =
+  forAll (resize 5 $ listOf arbitrary) $ \tweaks ->
+    forAll arbitrary $ \msg ->
+      let pubkey = derive_pub sk
+          pubNonce = publicNonce secNonce
+          pubNonces = [pubNonce]
+          pubkeys = [pubkey]
+          aggNonce = fromJust $ aggNonces pubNonces
+          ctx = mkSessionContext aggNonce pubkeys tweaks msg
+          sig = sign secNonce secKey ctx
+          signerIndex = 0 -- We're always the first signer in this test
+          result = partialSigVerify sig pubNonces pubkeys tweaks msg signerIndex
+       in result === True
 
 -- | Property: Signing the same message with the same tweaks produces the same signature.
-prop_signatureDeterminismWithTweaks :: SecNonce -> SecKey -> [Tweak] -> ByteString -> Property
-prop_signatureDeterminismWithTweaks secNonce secKey@(SecKey sk) tweaks msg =
-  length tweaks
-    <= 5
-    ==> let pubkey -- Limit tweaks to reasonable number
-              =
-              derive_pub sk
-            pubNonce = publicNonce secNonce
-            pubNonces = [pubNonce]
-            pubkeys = [pubkey]
-            aggNonce = fromJust $ aggNonces pubNonces
-            ctx = mkSessionContext aggNonce pubkeys tweaks msg
-            sig1 = sign secNonce secKey ctx
-            sig2 = sign secNonce secKey ctx
-         in sig1 === sig2
+prop_signatureDeterminismWithTweaks :: SecNonce -> SecKey -> Property
+prop_signatureDeterminismWithTweaks secNonce secKey@(SecKey sk) =
+  forAll (resize 5 $ listOf arbitrary) $ \tweaks ->
+    forAll arbitrary $ \msg ->
+      let pubkey = derive_pub sk
+          pubNonce = publicNonce secNonce
+          pubNonces = [pubNonce]
+          pubkeys = [pubkey]
+          aggNonce = fromJust $ aggNonces pubNonces
+          ctx = mkSessionContext aggNonce pubkeys tweaks msg
+          sig1 = sign secNonce secKey ctx
+          sig2 = sign secNonce secKey ctx
+       in sig1 === sig2
 
 -- | Property: Empty tweaks should produce the same result as no tweaks.
 prop_emptyTweaksEqualsNoTweaks :: SecNonce -> SecKey -> ByteString -> Property
