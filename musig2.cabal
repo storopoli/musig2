@@ -39,6 +39,7 @@ test-suite musig2-tests
   main-is:          Main.hs
   other-modules:
     AggNonces
+    AggPartials
     AggPubkeys
     ApplyTweaks
     Crypto.Curve.Secp256k1.MuSig2

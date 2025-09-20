@@ -1,6 +1,7 @@
 module Main where
 
 import AggNonces (testAggNonces)
+import AggPartials (testAggPartials)
 import AggPubkeys (testAggPubkeys)
 import ApplyTweaks (testApplyTweaks)
 import MonoidProjective (propertyMonoidProjective)
@@ -17,7 +18,7 @@ import Tweak (testTweak)
 
 -- | Unit tests.
 unitTests :: TestTree
-unitTests = testGroup "Unit Tests" [testSortPubkeys, testAggPubkeys, testParityPub, testApplyTweaks, testNonceGen, testAggNonces, testSignVerify, testTweak]
+unitTests = testGroup "Unit Tests" [testSortPubkeys, testAggPubkeys, testParityPub, testApplyTweaks, testNonceGen, testAggNonces, testAggPartials, testSignVerify, testTweak]
 
 -- | Property tests.
 propertyTests :: TestTree
