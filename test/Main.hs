@@ -2,6 +2,7 @@ module Main where
 
 import AggNonces (testAggNonces)
 import AggPartials (testAggPartials)
+import AggPartialsProperty (propertyAggPartials)
 import AggPubkeys (testAggPubkeys)
 import ApplyTweaks (testApplyTweaks)
 import MonoidProjective (propertyMonoidProjective)
@@ -22,7 +23,7 @@ unitTests = testGroup "Unit Tests" [testSortPubkeys, testAggPubkeys, testParityP
 
 -- | Property tests.
 propertyTests :: TestTree
-propertyTests = testGroup "Property Tests" [propertyMonoidProjective, propertyNonceGen, propertyMonoidPubNonce, propertySignVerify, propertySignVerifyTweak]
+propertyTests = testGroup "Property Tests" [propertyMonoidProjective, propertyNonceGen, propertyMonoidPubNonce, propertySignVerify, propertySignVerifyTweak, propertyAggPartials]
 
 -- | Tests.
 tests :: TestTree

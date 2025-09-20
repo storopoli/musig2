@@ -40,6 +40,7 @@ test-suite musig2-tests
   other-modules:
     AggNonces
     AggPartials
+    AggPartialsProperty
     AggPubkeys
     ApplyTweaks
     Crypto.Curve.Secp256k1.MuSig2
