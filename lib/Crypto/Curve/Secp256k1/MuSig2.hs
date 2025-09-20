@@ -17,6 +17,62 @@ Maintainer: Jose Storopoli <jose@storopoli.com>
 Pure [BIP0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
 [MuSig2](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
 (partial)signatures with tweak support on the elliptic curve secp256k1.
+
+== Usage
+
+A sample GHCi session:
+
+@
+> -- pragmas and b16 import for illustration only; not required
+> :set -XOverloadedStrings
+> :set -XBangPatterns
+> import qualified Data.ByteString.Base16 as B16
+>
+> -- import qualified
+> import qualified Crypto.Curve.Secp256k1.MuSig2 as MuSig2
+> import qualified Crypto.Curve.Secp256k1 as Secp256k1
+>
+> -- secret keys for a 2-of-2 multisig
+> let sec1 = MuSig2.SecKey 0xB7E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF
+> let sec2 = MuSig2.SecKey 0x68E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF
+>
+> -- derive public keys
+> let pub1 = Secp256k1.derive_pub 0xB7E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF
+> let pub2 = Secp256k1.derive_pub 0x68E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF
+> let pubkeys = [pub1, pub2]
+>
+> -- create key aggregation context
+> let keyagg_ctx = MuSig2.mkKeyAggContext pubkeys Nothing
+> let agg_pk = MuSig2.aggregatedPubkey keyagg_ctx
+>
+> -- message to sign
+> let msg = "i approve of this message"
+>
+> -- generate nonces for each signer
+> let params1 = MuSig2.defaultSecNonceGenParams pub1
+> let params2 = MuSig2.defaultSecNonceGenParams pub2
+> secnonce1 <- MuSig2.secNonceGen params1
+> secnonce2 <- MuSig2.secNonceGen params2
+> let pubnonce1 = MuSig2.publicNonce secnonce1
+> let pubnonce2 = MuSig2.publicNonce secnonce2
+> let pubnonces = [pubnonce1, pubnonce2]
+>
+> -- aggregate nonces and create session context
+> let Just aggnonce = MuSig2.aggNonces pubnonces
+> let session_ctx = MuSig2.mkSessionContext aggnonce pubkeys [] msg
+>
+> -- each signer creates a partial signature
+> let psig1 = MuSig2.sign secnonce1 sec1 session_ctx
+> let psig2 = MuSig2.sign secnonce2 sec2 session_ctx
+> let psigs = [psig1, psig2]
+>
+> -- aggregate partial signatures into final signature
+> let final_sig = MuSig2.aggPartials psigs session_ctx
+>
+> -- verify the aggregated signature
+> Secp256k1.verify_schnorr msg agg_pk final_sig
+> True
+@
 -}
 module Crypto.Curve.Secp256k1.MuSig2 (
   -- Main types and functions
