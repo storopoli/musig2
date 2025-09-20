@@ -24,14 +24,14 @@ library
   exposed-modules:  Crypto.Curve.Secp256k1.MuSig2
   other-modules:    Crypto.Curve.Secp256k1.MuSig2.Internal
   build-depends:
-    , base               >=4.9 && <5
-    , base16-bytestring  >=1.0 && <1.1.0
-    , binary             >=0.8 && <0.9
-    , bytestring         >=0.9 && <0.13
-    , containers         >=0.6 && <0.9
-    , entropy            >=0.4 && <0.5
-    , ppad-secp256k1     >=0.3 && <0.5
-    , ppad-sha256        >=0.2 && <0.3.0
+    , base               >=4.19 && <5
+    , base16-bytestring  >=1.0  && <1.1.0
+    , binary             >=0.8  && <0.9
+    , bytestring         >=0.9  && <0.13
+    , containers         >=0.6  && <0.9
+    , entropy            >=0.4  && <0.5
+    , ppad-secp256k1     >=0.3  && <0.5
+    , ppad-sha256        >=0.2  && <0.3.0
 
 test-suite musig2-tests
   type:             exitcode-stdio-1.0
@@ -60,7 +60,7 @@ test-suite musig2-tests
 
   ghc-options:      -rtsopts -Wall
   build-depends:
-    , base
+    , base               >=4.19 && <5
     , base16-bytestring
     , binary
     , bytestring
@@ -79,7 +79,7 @@ benchmark musig2-bench
   main-is:          Main.hs
   ghc-options:      -rtsopts -O2 -Wall -fno-warn-orphans
   build-depends:
-    , base
+    , base               >=4.19 && <5
     , base16-bytestring
     , bytestring
     , criterion
