@@ -6,7 +6,7 @@
 module Util (parsePoint, parseScalar, parsePubNonce, extractXOnly, decodeHex, Rand32 (..), Scalar (..)) where
 
 import Crypto.Curve.Secp256k1 (Projective, Pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
-import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce (..), SecNonceGenParams (..))
+import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce (..), SecNonceGenParams (..), Tweak (..))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
@@ -156,6 +156,13 @@ Should only used for testing purposes, hence why it is only defined in this test
 -}
 instance Show SecKey where
   show (SecKey int) = "SecKey " ++ show int
+
+-- | 'Arbitrary' instance for 'Tweak'.
+instance Arbitrary Tweak where
+  arbitrary = do
+    tweakValue <- choose (1, _CURVE_Q - 1) -- Ensure valid tweak value
+    isXOnly <- arbitrary
+    return $ if isXOnly then XOnlyTweak tweakValue else PlainTweak tweakValue
 
 {- | Parses a 'ByteString' into a 'PubNonce'.
 

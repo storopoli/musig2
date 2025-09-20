@@ -10,6 +10,7 @@ import NonceGenProperty (propertyNonceGen)
 import ParityPub (testParityPub)
 import SignVerify (testSignVerify)
 import SignVerifyProperty (propertySignVerify)
+import SignVerifyTweakProperty (propertySignVerifyTweak)
 import SortPubkeys (testSortPubkeys)
 import Test.Tasty
 import Tweak (testTweak)
@@ -20,7 +21,7 @@ unitTests = testGroup "Unit Tests" [testSortPubkeys, testAggPubkeys, testParityP
 
 -- | Property tests.
 propertyTests :: TestTree
-propertyTests = testGroup "Property Tests" [propertyMonoidProjective, propertyNonceGen, propertyMonoidPubNonce, propertySignVerify]
+propertyTests = testGroup "Property Tests" [propertyMonoidProjective, propertyNonceGen, propertyMonoidPubNonce, propertySignVerify, propertySignVerifyTweak]
 
 -- | Tests.
 tests :: TestTree
