@@ -6,6 +6,7 @@ license:         MIT
 license-file:    LICENSE
 author:          Jose Storopoli
 maintainer:      jose@storopoli.com
+homepage:        https://github.com/storopoli/musig2
 category:        Cryptography
 build-type:      Simple
 tested-with:     GHC ==9.8.4
