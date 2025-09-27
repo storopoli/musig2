@@ -72,11 +72,17 @@ A sample GHCi session:
 > -- verify the aggregated signature
 > Secp256k1.verify_schnorr msg agg_pk final_sig
 > True
+>
+> -- Single signer deterministic signing
+> let psig = MuSig2.signSingle sec1 pub1 "single signer message" Nothing
+> MuSig2.partialSigVerify psig pubnonces pubkeys [] "single signer message" 0
+> True
 @
 -}
 module Crypto.Curve.Secp256k1.MuSig2 (
   -- Main types and functions
   sign,
+  signSingle,
   SecKey (..),
   PartialSignature,
   partialSigVerify,
@@ -201,6 +207,80 @@ sign secnonce sk ctx =
     pubNonce' = PubNonce (mul _CURVE_G secnonce.k1) (mul _CURVE_G secnonce.k2)
    in
     if partialSigVerifyInternal s pubNonce' p ctx then s else error "musig2 (sign): could not verify partial signature against public nonce, public key and session context"
+
+{- | Single signer deterministic signing following BIP-327 algorithm.
+
+This function implements the deterministic signing process where:
+
+1. The signer generates their own nonce deterministically
+2. The signer's nonce is aggregated with the provided "other nonces"
+3. A partial signature is computed using the standard MuSig2 signing algorithm
+
+The partial signature returned from this function is a potentially-zero
+scalar value which can then be passed to other signers for verification
+and aggregation.
+-}
+signSingle ::
+  (Traversable t) =>
+  -- | Secret key.
+  SecKey ->
+  -- | Aggregated nonces from other signers (not including this signer).
+  PubNonce ->
+  -- | Public keys.
+  t Pub ->
+  -- | Tweaks.
+  t Tweak ->
+  -- | Message to sign.
+  ByteString ->
+  -- | Optional extra input for nonce generation.
+  Maybe ByteString ->
+  -- | Partial signature.
+  PartialSignature
+signSingle secKey aggOtherNonce pubKeys tweaks msg extraIn =
+  let
+    tweaks' = Seq.fromList (toList tweaks)
+    keyCtx = if Seq.null tweaks' then mkKeyAggContext pubKeys Nothing else foldl applyTweak (mkKeyAggContext pubKeys Nothing) tweaks'
+    aggPk = q keyCtx
+    pk = derive_pub (unSecKey secKey)
+
+    -- Generate this signer's nonce deterministically
+    secNonce = case extraIn of
+      Just extraIn' ->
+        -- Use the provided randomness directly
+        secNonceGenWithRand
+          extraIn'
+          SecNonceGenParams
+            { _pk = pk
+            , _sk = Just secKey
+            , _aggpk = Just aggPk
+            , _msg = Just msg
+            , _extraIn = Nothing
+            }
+      Nothing ->
+        -- Generate randomness from secret key
+        let skBytes = integerToBytes32 (unSecKey secKey)
+            auxHash = hashTag "MuSig/aux" skBytes
+            rand = xorByteStrings skBytes auxHash
+         in secNonceGenWithRand
+              rand
+              SecNonceGenParams
+                { _pk = pk
+                , _sk = Just secKey
+                , _aggpk = Just aggPk
+                , _msg = Just msg
+                , _extraIn = Nothing
+                }
+
+    -- Convert to public nonce
+    pubNonce = publicNonce secNonce
+
+    -- Aggregate this signer's nonce with the other nonces
+    finalAggNonce = aggOtherNonce <> pubNonce
+
+    -- Create session context with the final aggregated nonce
+    ctx = mkSessionContext finalAggNonce pubKeys tweaks msg
+   in
+    sign secNonce secKey ctx
 
 {- | A partial signature which is a scalar in the range \(0 \leq x < n\) where
 \(n\) is the curve order.
