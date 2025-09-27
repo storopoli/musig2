@@ -394,7 +394,7 @@ mkSessionContext aggNonce pks tweaks msg
   checkOrder = (>= _CURVE_Q) . getTweak
 
 {- | Gets the signing nonce as a 'Projective' following
-[BIP327 algorithm and recommendations](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#dealing-with-infinity-in-nonce-aggregation).
+[BIP-0327 algorithm and recommendations](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#dealing-with-infinity-in-nonce-aggregation).
 -}
 getSigningNonce :: SessionContext -> Projective
 getSigningNonce ctx =
@@ -407,7 +407,7 @@ getSigningNonce ctx =
     if finalNonce == _CURVE_ZERO then _CURVE_G else finalNonce
 
 {- | Gets the signing nonce coefficient following
-[BIP327 algorithm and recommendations](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#dealing-with-infinity-in-nonce-aggregation).
+[BIP-0327 algorithm and recommendations](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#dealing-with-infinity-in-nonce-aggregation).
 -}
 getSigningNonceCoeff :: SessionContext -> Integer
 getSigningNonceCoeff ctx =
@@ -428,11 +428,11 @@ getSigningNonceCoeff ctx =
     bytesToInteger $ hashTagModQ "MuSig/noncecoef" preimage
 
 {- | Gets the signing challenge hash as a 'ByteString' following
-[BIP327 algorithm](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+[BIP-0327 algorithm](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
 
 Note that the signing challenge hash is the naming convention from the
 [MuSig2 paper, page 6](https://eprint.iacr.org/2020/1261).
-In the BIP327 it is referred as @e@.
+In the BIP-0327 it is referred as @e@.
 -}
 getSigningHash :: SessionContext -> ByteString
 getSigningHash ctx =
@@ -466,7 +466,7 @@ getTweak :: Tweak -> Integer
 getTweak (XOnlyTweak int) = int
 getTweak (PlainTweak int) = int
 
--- | Applies a tweak to a KeyAggContext and returns a new KeyAggContext following [BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+-- | Applies a tweak to a KeyAggContext and returns a new KeyAggContext following [BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
 applyTweak :: KeyAggContext -> Tweak -> KeyAggContext
 applyTweak ctx newTweak =
   let pubkey = q ctx
@@ -523,7 +523,7 @@ than one message with the same key, as this would allow an observer to
 compute the private key used to create both signatures.
 
 If you want to follow
-[BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
+[BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
 suggestions, then use 'secNonceGen' otherwise use 'mkSecNonce'.
 -}
 data SecNonce = SecNonce
@@ -544,7 +544,7 @@ Make sure that you have access to a good CSPRNG in your system before calling
 this function.
 
 Note that this does not follow the
-[BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
+[BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
 algorithm.
 -}
 mkSecNonce :: IO SecNonce
@@ -581,7 +581,16 @@ defaultSecNonceGenParams pk =
     }
 
 {- | Generates a 'SecNonce' using the inputs and algorithms from
-[BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+[BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+
+Tries to get the entropy from the system's underlying Cryptographic Secure
+Pseudorandom Number Generator (CSPRNG) using the
+[@entropy@](https://hackage.haskell.org/package/entropy) package.
+
+== WARNING
+
+Make sure that you have access to a good CSPRNG in your system before calling
+this function.
 -}
 secNonceGen :: SecNonceGenParams -> IO SecNonce
 secNonceGen params = loop
@@ -596,7 +605,7 @@ secNonceGen params = loop
 
 {- | Generates a 'SecNonce' using a given random 'ByteString' and the inputs and
 algorithms from
-[BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+[BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
 
 == WARNING
 
@@ -680,7 +689,7 @@ instance Monoid PubNonce where
   mempty = PubNonce _CURVE_ZERO _CURVE_ZERO
 
 {- | Aggregates a 'Traversable' of 'PubNonce's using the
-[Nonce Aggregation algorithm in BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+[Nonce Aggregation algorithm in BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
 -}
 aggNonces :: (Traversable t) => t PubNonce -> Maybe PubNonce
 aggNonces nonces

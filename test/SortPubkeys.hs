@@ -35,9 +35,9 @@ parsePointsSorted =
       , "03DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B502BA659"
       ]
 
--- | Test vectors from [BIP327 `key_sort_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/key_sort_vectors.json)
+-- | Test vectors from [BIP-0327 `key_sort_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/key_sort_vectors.json)
 testSortPubkeys :: TestTree
 testSortPubkeys =
   testGroup
     "sorting pubkeys"
-    [testCase "BIP327 test vector" $ sortPublicKeys parsePoints @=? parsePointsSorted]
+    [testCase "BIP-0327 test vector" $ sortPublicKeys parsePoints @=? parsePointsSorted]

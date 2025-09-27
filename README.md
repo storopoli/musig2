@@ -4,10 +4,10 @@
 ![](https://img.shields.io/badge/license-MIT-brightgreen)
 [![](https://img.shields.io/badge/haddock-musig2-lightblue)](https://hackage-content.haskell.org/package/musig2/docs/Crypto-Curve-Secp256k1-MuSig2.html)
 
-A pure Haskell implementation of [BIP0327][bip327] [MuSig2 multi-signature
+A pure Haskell implementation of [BIP-0327][bip327] [MuSig2 multi-signature
 scheme][musig2] on [secp256k1][ppad-secp256k1]. The library implements partial
 signatures with tweak support following best practices and guidelines
-from [BIP0327][bip327].
+from [BIP-0327][bip327].
 
 ## Usage
 
@@ -71,7 +71,7 @@ Haddocks (API documentation, etc.) are hosted at [hackage][hackage].
 
 ## Security
 
-`musig2` passes all test vectors specified in the [BIP0327][bip327],
+`musig2` passes all test vectors specified in the [BIP-0327][bip327],
 while also checking for key properties using [`QuickCheck`][quickcheck].
 All elliptic curve and modular arithmetic operations are deferred to
 the [`ppad-secp256k1`][ppad-secp256k1] package.

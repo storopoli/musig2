@@ -7,7 +7,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Util (parsePoint)
 
--- | Some examples from [BIP327 test vectors](https://github.com/bitcoin/bips/tree/master/bip-0327/vectors).
+-- | Some examples from [BIP-0327 test vectors](https://github.com/bitcoin/bips/tree/master/bip-0327/vectors).
 testParityPub :: TestTree
 testParityPub =
   testGroup

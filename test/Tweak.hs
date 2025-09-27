@@ -14,11 +14,11 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Util (decodeHex, parsePoint, parsePubNonce, parseScalar)
 
--- | Secret key from BIP327 test vectors
+-- | Secret key from BIP-0327 test vectors.
 testSecKey :: SecKey
 testSecKey = SecKey $ parseScalar "7FB9E0E687ADA1EEBF7ECFE2F21E73EBDB51A7D450948DFE8D76D7F2D1007671"
 
--- | Secret nonce from BIP327 test vectors
+-- | Secret nonce from BIP-0327 test vectors.
 testSecNonce :: SecNonce
 testSecNonce =
   SecNonce
@@ -26,7 +26,7 @@ testSecNonce =
     , k2 = parseScalar "FA27FD49B1D50085B481285E1CA205D55C82CC1B31FF5CD54A489829355901F7"
     }
 
--- | Input public keys from BIP327 test vectors
+-- | Input public keys from BIP-0327 test vectors.
 inputPubkeys :: [Pub]
 inputPubkeys =
   map
@@ -36,7 +36,7 @@ inputPubkeys =
     , "02DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B502BA659"
     ]
 
--- | Public nonces from BIP327 test vectors
+-- | Public nonces from BIP-0327 test vectors.
 inputPubNonces :: [PubNonce]
 inputPubNonces =
   map
@@ -46,7 +46,7 @@ inputPubNonces =
     , "032DE2662628C90B03F5E720284EB52FF7D71F4284F627B68A853D78C78E1FFE9303E4C5524E83FFE1493B9077CF1CA6BEB2090C93D930321071AD40B2F44E599046"
     ]
 
--- | Test tweaks from BIP327 test vectors
+-- | Test tweaks from BIP-0327 test vectors.
 testTweaks :: [Integer]
 testTweaks =
   map
@@ -58,11 +58,11 @@ testTweaks =
     , "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141"
     ]
 
--- | Test message from BIP327 test vectors
+-- | Test message from BIP-0327 test vectors.
 testMessage :: ByteString
 testMessage = decodeHex "F95466D086770E689964664219266FE5ED215C92AE20BAB5C9D79ADDDDF3C0CF"
 
--- | Valid test vector data: (key indices, nonce indices, tweak indices, is_xonly flags, signer index, expected signature, comment)
+-- | Valid test vector data: (key indices, nonce indices, tweak indices, is_xonly flags, signer index, expected signature, comment).
 validTestVectors :: [([Int], [Int], [Int], [Bool], Int, ByteString, String)]
 validTestVectors =
   [ ([1, 2, 0], [1, 2, 0], [0], [True], 2, decodeHex "E28A5C66E61E178C2BA19DB77B6CF9F7E2F0F56C17918CD13135E60CC848FE91", "A single x-only tweak")
@@ -72,13 +72,13 @@ validTestVectors =
   , ([1, 2, 0], [1, 2, 0], [0, 1, 2, 3], [True, False, True, False], 2, decodeHex "B255FDCAC27B40C7CE7848E2D3B7BF5EA0ED756DA81565AC804CCCA3E1D5D239", "Four tweaks: x-only, plain, x-only, plain. If an implementation prohibits applying plain tweaks after x-only tweaks, it can skip this test vector or return an error.")
   ]
 
--- | Error test vector data: (tweak indices, is_xonly flags, expected error message, comment)
+-- | Error test vector data: (tweak indices, is_xonly flags, expected error message, comment).
 errorTestVectors :: [([Int], [Bool], String, String)]
 errorTestVectors =
   [ ([4], [False], "tweaks must be less than curve order", "Tweak is invalid because it exceeds group size")
   ]
 
--- | Creates tweaks from indices and xonly flags
+-- | Creates tweaks from indices and xonly flags.
 createTweaks :: [Int] -> [Bool] -> [Tweak]
 createTweaks = zipWith createTweak
  where
@@ -86,10 +86,10 @@ createTweaks = zipWith createTweak
     let tweakValue = testTweaks !! i
      in if isXOnly then XOnlyTweak tweakValue else PlainTweak tweakValue
 
--- | Creates test case from valid test vector data
+-- | Creates test case from valid test vector data.
 makeValidTestCase :: Int -> ([Int], [Int], [Int], [Bool], Int, ByteString, String) -> TestTree
 makeValidTestCase i (keyIndices, nonceIndices, tweakIndices, isXOnly, signerIndex, expectedSig, comment) =
-  testCase ("BIP327 valid test vector " <> show (i + 1) <> ": " <> comment) $ do
+  testCase ("BIP-0327 valid test vector " <> show (i + 1) <> ": " <> comment) $ do
     let selectedKeys = map (inputPubkeys !!) keyIndices
         selectedNonces = map (inputPubNonces !!) nonceIndices
         tweaks = createTweaks tweakIndices isXOnly
@@ -97,46 +97,46 @@ makeValidTestCase i (keyIndices, nonceIndices, tweakIndices, isXOnly, signerInde
         aggNonce = fromJust $ aggNonces selectedNonces
         ctx = mkSessionContext aggNonce selectedKeys tweaks testMessage
 
-    -- Test 1: Generate signature using the sign function (with error handling)
+    -- Test 1: Generate signature using the sign function (with error handling).
     signResult <- try $ evaluate $ sign testSecNonce testSecKey ctx
     case signResult of
       Left (ErrorCall errMsg) -> do
-        -- If sign fails, this indicates a potential bug in the implementation
+        -- If sign fails, this indicates a potential bug in the implementation.
         assertFailure ("POTENTIAL BUG: Sign function failed: " <> errMsg <> " for test: " <> comment)
       Right generatedSig -> do
-        -- Test 2: Verify that the generated signature is valid
+        -- Test 2: Verify that the generated signature is valid.
         let generatedSigVerifies = partialSigVerify generatedSig selectedNonces selectedKeys tweaks testMessage signerIndex
         assertBool ("Generated signature should verify: " <> comment) generatedSigVerifies
 
-        -- Test 3: Check if the expected signature from BIP327 test vectors verifies
+        -- Test 3: Check if the expected signature from BIP-0327 test vectors verifies.
         let expectedSigVerifies = partialSigVerify expectedSignature selectedNonces selectedKeys tweaks testMessage signerIndex
 
-        -- Test 4: Compare generated signature with expected signature
-        -- Note: If they don't match, it could indicate a difference in implementation or test vector interpretation
+        -- Test 4: Compare generated signature with expected signature.
+        -- Note: If they don't match, it could indicate a difference in implementation or test vector interpretation.
         if expectedSigVerifies
           then do
-            -- If the expected signature verifies, we can compare it with our generated one
+            -- If the expected signature verifies, we can compare it with our generated one.
             if generatedSig == expectedSignature
               then assertBool ("Generated signature matches expected: " <> comment) True
               else do
-                -- They don't match - this could be due to different nonce generation or other implementation details
+                -- They don't match - this could be due to different nonce generation or other implementation details.
                 -- For now, we accept this as long as both signatures verify correctly
                 assertBool ("Different but valid signatures (implementation variation): " <> comment) True
           else do
-            -- Expected signature doesn't verify - this suggests our interpretation might be wrong
+            -- Expected signature doesn't verify - this suggests our interpretation might be wrong.
             -- But if our generated signature verifies, the core functionality works
             assertBool ("Expected signature from test vector doesn't verify, but generated signature does: " <> comment) generatedSigVerifies
 
--- | Creates test case from error test vector data
+-- | Creates test case from error test vector data.
 makeErrorTestCase :: Int -> ([Int], [Bool], String, String) -> TestTree
 makeErrorTestCase i (tweakIndices, isXOnly, expectedError, comment) =
-  testCase ("BIP327 error test vector " <> show (i + 1) <> ": " <> comment) $ do
+  testCase ("BIP-0327 error test vector " <> show (i + 1) <> ": " <> comment) $ do
     let selectedKeys = [inputPubkeys !! 1, inputPubkeys !! 2, head inputPubkeys] -- [1, 2, 0]
         selectedNonces = [inputPubNonces !! 1, inputPubNonces !! 2, head inputPubNonces] -- [1, 2, 0]
         tweaks = createTweaks tweakIndices isXOnly
         aggNonce = fromJust $ aggNonces selectedNonces
 
-    -- Test that creating a session context with invalid tweaks causes an error
+    -- Test that creating a session context with invalid tweaks causes an error.
     result <- try $ evaluate $ mkSessionContext aggNonce selectedKeys tweaks testMessage
     case result of
       Left (ErrorCall errMsg) ->
@@ -145,7 +145,7 @@ makeErrorTestCase i (tweakIndices, isXOnly, expectedError, comment) =
           (expectedError `isInfixOf` errMsg)
       Right _ -> assertFailure ("Expected error but session context creation succeeded: " <> comment)
 
--- | Test vectors from [BIP327 `tweak_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/tweak_vectors.json)
+-- | Test vectors from [BIP-0327 `tweak_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/tweak_vectors.json).
 testTweak :: TestTree
 testTweak =
   testGroup "tweak vectors" $

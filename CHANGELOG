@@ -2,4 +2,4 @@
 
 ## 0.1.0 (2025-09-20)
 
-* Initial release, full BIP327 support except [Deterministic and Stateless Signing for a Single Signer](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Deterministic_and_Stateless_Signing_for_a_Single_Signer)
+* Initial release, full BIP-0327 support except [Deterministic and Stateless Signing for a Single Signer](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#user-content-Deterministic_and_Stateless_Signing_for_a_Single_Signer)

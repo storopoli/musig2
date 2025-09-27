@@ -24,7 +24,7 @@ data SigAggTestVector = SigAggTestVector
   }
   deriving (Show)
 
--- | Global test data from BIP327 sig_agg_vectors.json
+-- | Global test data from BIP-0327 @sig_agg_vectors.json@
 pubkeys :: [Pub]
 pubkeys =
   [ parsePoint "03935F972DA013F80AE011890FA89B67A27B7BE6CCB24D3274D18B2D4067F261A9"
@@ -43,7 +43,7 @@ pnonces =
   , parsePubNonce "02D97DDA5988461DF58C5897444F116A7C74E5711BF77A9446E27806563F3B6C47020CBAD9C363A7737F99FA06B6BE093CEAFF5397316C5AC46915C43767AE867C00"
   ]
 
--- | Raw tweak values from BIP327 test vectors
+-- | Raw tweak values from BIP-0327 test vectors
 tweakValues :: [Integer]
 tweakValues =
   [ parseScalar "B511DA492182A91B0FFB9A98020D55F260AE86D7ECBD0399C7383D59A5F2AF7C"
@@ -67,7 +67,7 @@ psigs =
 msg :: ByteString
 msg = decodeHex "599C67EA410D005B9DA90817CF03ED3B1C868E4DA4EDF00A5880B0082C237869"
 
--- | Test vectors - valid cases from BIP327 JSON
+-- | Test vectors - valid cases from BIP-0327 JSON
 validTestVectors :: [SigAggTestVector]
 validTestVectors =
   [ SigAggTestVector
@@ -112,7 +112,7 @@ validTestVectors =
       }
   ]
 
--- | Test vectors - error cases from BIP327 JSON
+-- | Test vectors - error cases from BIP-0327 JSON
 errorTestVectors :: [SigAggTestVector]
 errorTestVectors =
   [ SigAggTestVector
@@ -138,7 +138,7 @@ buildTweaks = zipWith buildTweak
 -- | Creates a test case for valid signature aggregation.
 makeValidTestCase :: Int -> SigAggTestVector -> TestTree
 makeValidTestCase i SigAggTestVector{..} =
-  testCase ("BIP327 SigAgg Valid Vector " ++ show (i + 1)) $ do
+  testCase ("BIP-0327 SigAgg Valid Vector " ++ show (i + 1)) $ do
     let selectedKeys = map (pubkeys !!) keyIndices
     let selectedTweaks = buildTweaks tweakIndices isXOnly
     let selectedPsigs = map (psigs !!) psigIndices
@@ -151,7 +151,7 @@ makeValidTestCase i SigAggTestVector{..} =
 -- | Creates a test case for error signature aggregation.
 makeErrorTestCase :: Int -> SigAggTestVector -> TestTree
 makeErrorTestCase i SigAggTestVector{..} =
-  testCase ("BIP327 SigAgg Error Vector " ++ show (i + 1)) $ do
+  testCase ("BIP-0327 SigAgg Error Vector " ++ show (i + 1)) $ do
     -- For the error case, we expect aggPartials to fail due to invalid partial signature
     -- The test vector has psig[8] which is FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
     -- This exceeds the curve order and should cause validation to fail
@@ -161,7 +161,7 @@ makeErrorTestCase i SigAggTestVector{..} =
 testAggPartials :: TestTree
 testAggPartials =
   testGroup
-    "BIP327 Signature Aggregation Vectors"
+    "BIP-0327 Signature Aggregation Vectors"
     [ testGroup "Valid Cases" $ zipWith makeValidTestCase [0 ..] validTestVectors
     , testGroup "Error Cases" $ zipWith makeErrorTestCase [0 ..] errorTestVectors
     ]

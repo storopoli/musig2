@@ -44,7 +44,7 @@ import qualified Data.Sequence as Seq
 import Data.Traversable ()
 
 {- | Aggregates a 'Traversable' of 'Pub'keys using the
-[Key Aggregation algorithm in BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+[Key Aggregation algorithm in BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
 
 The algorith can be briefly described as
 
@@ -104,7 +104,7 @@ hashProjectivesTag tag ps = hashTag tag $ fold byteStrings
  where
   byteStrings = fmap serialize_point ps
 
-{- | Tagged hashes used in [BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+{- | Tagged hashes used in [BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
 
 Takes a tag and a string.
 -}
@@ -113,7 +113,7 @@ hashTag t s = hash (taggedHash <> taggedHash <> s)
  where
   taggedHash = hash t
 
-{- | Tagged hashes used in [BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
+{- | Tagged hashes used in [BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
 modulo the curve order.
 
 Takes a tag and a string.

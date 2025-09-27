@@ -9,7 +9,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Util (parsePoint, parsePubNonce)
 
--- | Input 'PubNonce's from BIP327 test vectors
+-- | Input 'PubNonce's from BIP-0327 test vectors
 inputPubNonces :: [PubNonce]
 inputPubNonces =
   map
@@ -31,13 +31,13 @@ testVectors =
 -- | Creates test case from vector data.
 makeTestCase :: Int -> ([Int], PubNonce) -> TestTree
 makeTestCase i (indices, expected) =
-  testCase ("BIP327 test vector " <> show (i + 1)) $
+  testCase ("BIP-0327 test vector " <> show (i + 1)) $
     fromJust aggNonce @=? expected
  where
   selectedNonces = map (inputPubNonces !!) indices
   aggNonce = aggNonces selectedNonces
 
--- | Test vectors from [BIP327 `nonce_agg_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/nonce_agg_vectors.json).
+-- | Test vectors from [BIP-0327 `nonce_agg_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/nonce_agg_vectors.json).
 testAggNonces :: TestTree
 testAggNonces =
   testGroup "aggregating pubkeys" $

@@ -10,7 +10,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Util (decodeHex, extractXOnly, parsePoint)
 
--- | Input public keys from BIP327 test vectors
+-- | Input public keys from BIP-0327 test vectors
 inputPubkeys :: [Pub]
 inputPubkeys =
   map
@@ -33,7 +33,7 @@ testVectors =
   , ([0, 0, 1, 1], decodeHex "69BC22BFA5D106306E48A20679DE1D7389386124D07571D0D872686028C26A3E")
   ]
 
--- | Tweak test vectors from BIP327.
+-- | Tweak test vectors from BIP-0327.
 tweaks :: [Integer]
 tweaks =
   [ 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141 -- curve order (invalid)
@@ -50,7 +50,7 @@ errorTestVectors =
 -- | Creates test case from vector data.
 makeTestCase :: Int -> ([Int], ByteString) -> TestTree
 makeTestCase i (indices, expected) =
-  testCase ("BIP327 test vector " <> show (i + 1)) $
+  testCase ("BIP-0327 test vector " <> show (i + 1)) $
     extractXOnly aggPk @=? expected
  where
   selectedKeys = map (inputPubkeys !!) indices
@@ -60,7 +60,7 @@ makeTestCase i (indices, expected) =
 -- | Creates error test case from vector data.
 makeErrorTestCase :: Int -> ([Int], Int, Bool, String) -> TestTree
 makeErrorTestCase i (keyIndices, tweakIndex, isXOnly, expectedMsg) =
-  testCase ("BIP327 error test vector " <> show (i + 1)) $ do
+  testCase ("BIP-0327 error test vector " <> show (i + 1)) $ do
     result <- try $ evaluate $ mkKeyAggContext selectedKeys (Just tweak)
     case result of
       Left (ErrorCall msg) -> assertBool ("Expected '" <> expectedMsg <> "' in error message, got: " <> msg) (expectedMsg `isSubsequenceOf` msg)
@@ -77,7 +77,7 @@ makeErrorTestCase i (keyIndices, tweakIndex, isXOnly, expectedMsg) =
     | x == y = isSubsequenceOf xs ys
     | otherwise = isSubsequenceOf (x : xs) ys
 
--- | Test vectors from [BIP327 `key_agg_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/key_agg_vectors.json).
+-- | Test vectors from [BIP-0327 `key_agg_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/key_agg_vectors.json).
 testAggPubkeys :: TestTree
 testAggPubkeys =
   testGroup "aggregating pubkeys" $
