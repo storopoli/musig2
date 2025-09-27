@@ -26,7 +26,7 @@ data NonceGenTestVector = NonceGenTestVector
   , expected_r2 :: Pub
   }
 
--- | Hardcoded test vectors from bip-0327/vectors/nonce_gen_vectors.json.
+-- | Hardcoded test vectors from @bip-0327/vectors/nonce_gen_vectors.json@.
 testVectors :: [NonceGenTestVector]
 testVectors =
   [ NonceGenTestVector
@@ -82,7 +82,7 @@ testVectors =
 -- | Creates a test case from a test vector.
 makeNonceGenTestCase :: Int -> NonceGenTestVector -> TestTree
 makeNonceGenTestCase i NonceGenTestVector{..} =
-  testCase ("BIP327 NonceGen Vector " ++ show (i + 1)) $ do
+  testCase ("BIP-0327 NonceGen Vector " ++ show (i + 1)) $ do
     let params =
           SecNonceGenParams
             { _pk = pk
@@ -101,5 +101,5 @@ makeNonceGenTestCase i NonceGenTestVector{..} =
 -- | Main test group for NonceGen.
 testNonceGen :: TestTree
 testNonceGen =
-  testGroup "BIP327 NonceGen Vectors" $
+  testGroup "BIP-0327 NonceGen Vectors" $
     zipWith makeNonceGenTestCase [0 ..] testVectors

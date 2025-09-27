@@ -14,7 +14,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Util (decodeHex, parsePoint, parsePubNonce)
 
--- | Input public keys from BIP327 test vectors
+-- | Input public keys from BIP-0327 test vectors.
 inputPubkeys :: [Pub]
 inputPubkeys =
   map
@@ -25,7 +25,7 @@ inputPubkeys =
     , "020000000000000000000000000000000000000000000000000000000000000007"
     ]
 
--- | Public nonces from BIP327 test vectors
+-- | Public nonces from BIP-0327 test vectors.
 inputPubNonces :: [PubNonce]
 inputPubNonces =
   map
@@ -37,7 +37,7 @@ inputPubNonces =
     , "0200000000000000000000000000000000000000000000000000000000000000090287BF891D2A6DEAEBADC909352AA9405D1428C15F4B75F04DAE642A95C2548480"
     ]
 
--- | Messages from BIP327 test vectors
+-- | Messages from BIP-0327 test vectors.
 testMessages :: [ByteString]
 testMessages =
   [ decodeHex "F95466D086770E689964664219266FE5ED215C92AE20BAB5C9D79ADDDDF3C0CF"
@@ -70,31 +70,31 @@ errorTestVectors =
   , (decodeHex "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", [0, 1, 2], [0, 1, 2], 0, 0, "Signature exceeds group size")
   ]
 
--- | Valid secret key from BIP327 test vectors
+-- | Valid secret key from BIP-0327 test vectors.
 testSecKey :: SecKey
 testSecKey = SecKey $ bytesToInteger $ decodeHex "7FB9E0E687ADA1EEBF7ECFE2F21E73EBDB51A7D450948DFE8D76D7F2D1007671"
 
--- | Invalid secret nonce with k1 = 0 (from BIP327 test vectors secnonce index 1)
+-- | Invalid secret nonce with k1 = 0 (from BIP-0327 test vectors secnonce index 1)
 invalidSecNonce :: SecNonce
 invalidSecNonce = SecNonce{k1 = 0, k2 = 0}
 
--- | Creates test case from valid test vector data
+-- | Creates test case from valid test vector data.
 makeValidTestCase :: Int -> ([Int], [Int], Int, Int, ByteString) -> TestTree
 makeValidTestCase i (keyIndices, nonceIndices, msgIndex, signerIndex, expectedSig) =
-  testCase ("BIP327 valid test vector " <> show (i + 1)) $ do
+  testCase ("BIP-0327 valid test vector " <> show (i + 1)) $ do
     let selectedKeys = map (inputPubkeys !!) keyIndices
         selectedNonces = map (inputPubNonces !!) nonceIndices
         msg = testMessages !! msgIndex
         signature = bytesToInteger expectedSig
 
-    -- Test that the valid signature verifies
+    -- Test that the valid signature verifies.
     let result = partialSigVerify signature selectedNonces selectedKeys [] msg signerIndex
     assertBool "Valid signature should verify" result
 
--- | Creates test case from invalid test vector data
+-- | Creates test case from invalid test vector data.
 makeInvalidTestCase :: Int -> (ByteString, [Int], [Int], Int, Int, String) -> TestTree
 makeInvalidTestCase i (sigBytes, keyIndices, nonceIndices, msgIndex, signerIndex, comment) =
-  testCase ("BIP327 invalid test vector " <> show (i + 1) <> ": " <> comment) $ do
+  testCase ("BIP-0327 invalid test vector " <> show (i + 1) <> ": " <> comment) $ do
     let selectedKeys = map (inputPubkeys !!) keyIndices
         selectedNonces = map (inputPubNonces !!) nonceIndices
         msg = testMessages !! msgIndex
@@ -107,7 +107,7 @@ makeInvalidTestCase i (sigBytes, keyIndices, nonceIndices, msgIndex, signerIndex
 -- | Creates test case from error test vector data
 makeErrorTestCase :: Int -> (ByteString, [Int], [Int], Int, Int, String) -> TestTree
 makeErrorTestCase i (sigBytes, keyIndices, nonceIndices, msgIndex, signerIndex, comment) =
-  testCase ("BIP327 error test vector " <> show (i + 1) <> ": " <> comment) $ do
+  testCase ("BIP-0327 error test vector " <> show (i + 1) <> ": " <> comment) $ do
     let selectedKeys = map (inputPubkeys !!) keyIndices
         selectedNonces = map (inputPubNonces !!) nonceIndices
         msg = testMessages !! msgIndex
@@ -119,10 +119,10 @@ makeErrorTestCase i (sigBytes, keyIndices, nonceIndices, msgIndex, signerIndex, 
       Left (ErrorCall _) -> return () -- Expected error
       Right _ -> assertFailure ("Expected error but verification succeeded: " <> comment)
 
--- | Test case for invalid secret nonce (k1 = 0) from BIP327 sign_error_test_cases
+-- | Test case for invalid secret nonce (k1 = 0) from BIP-0327 sign_error_test_cases
 testInvalidSecNonce :: TestTree
 testInvalidSecNonce =
-  testCase "BIP327 sign error: first secnonce value is out of range" $ do
+  testCase "BIP-0327 sign error: first secnonce value is out of range" $ do
     let selectedKeys = take 3 inputPubkeys -- [0, 1, 2]
         selectedNonces = take 3 inputPubNonces -- [0, 1, 2]
         msg = head testMessages -- msg_index 0
@@ -137,7 +137,7 @@ testInvalidSecNonce =
           ("first secret scalar k1 is zero" `isInfixOf` errMsg)
       Right _ -> assertFailure "Expected error but signing succeeded"
 
--- | Test vectors from [BIP327 `sign_verify_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/sign_verify_vectors.json)
+-- | Test vectors from [BIP-0327 `sign_verify_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/sign_verify_vectors.json)
 testSignVerify :: TestTree
 testSignVerify =
   testGroup "sign and verify" $

@@ -166,7 +166,7 @@ instance Arbitrary Tweak where
 
 {- | Parses a 'ByteString' into a 'PubNonce'.
 
-Mostly used to parse BIP327 test vectors.
+Mostly used to parse BIP-0327 test vectors.
 -}
 parsePubNonce :: ByteString -> PubNonce
 parsePubNonce bs = PubNonce{r1 = r1', r2 = r2'}
