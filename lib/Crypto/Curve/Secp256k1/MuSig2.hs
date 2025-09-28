@@ -240,7 +240,7 @@ signSingle secKey aggOtherNonce pubKeys tweaks msg extraIn =
   let
     tweaks' = Seq.fromList (toList tweaks)
     keyCtx = if Seq.null tweaks' then mkKeyAggContext pubKeys Nothing else foldl applyTweak (mkKeyAggContext pubKeys Nothing) tweaks'
-    aggPk = q keyCtx
+    aggPk = aggregatedPubkey keyCtx
     pk = derive_pub (unSecKey secKey)
 
     -- Generate this signer's nonce deterministically

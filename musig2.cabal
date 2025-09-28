@@ -52,6 +52,7 @@ test-suite musig2-tests
     NonceGen
     NonceGenProperty
     ParityPub
+    SignSingleProperty
     SignVerify
     SignVerifyProperty
     SignVerifyTweakProperty
