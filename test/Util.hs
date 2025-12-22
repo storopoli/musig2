@@ -10,7 +10,7 @@ import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce (..),
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 import Test.Tasty.QuickCheck (Arbitrary (..), Gen, choose, frequency, vectorOf)
 
 {- | Parses a 'ByteString' into a 'Pub'key.
@@ -51,7 +51,7 @@ instance Arbitrary Projective where
         ( 99
         , do
             scalar <- choose (0, _CURVE_Q)
-            return (mul _CURVE_G scalar)
+            return (fromMaybe (error "Failed to multiply scalar by generator") $ mul _CURVE_G scalar)
         )
       ]
 

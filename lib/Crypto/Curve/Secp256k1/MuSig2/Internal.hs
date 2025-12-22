@@ -63,7 +63,9 @@ ordering of the 'Traversable' provided.
 aggPublicKeys :: (Traversable t) => t Pub -> Maybe Pub
 aggPublicKeys pks
   | Seq.null pksSeq = Nothing
-  | otherwise = Just $ fold1WithDefault _CURVE_ZERO (Seq.zipWith aggPk coefs pksSeq)
+  | otherwise = do
+      mulResults <- traverse (uncurry aggPk) (Seq.zip coefs pksSeq)
+      pure $ fold1WithDefault _CURVE_ZERO mulResults
  where
   pksSeq = Seq.fromList (toList pks)
   coefs = fmap (`computeKeyAggCoef` pksSeq) pksSeq
