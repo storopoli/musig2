@@ -9,7 +9,7 @@ maintainer:      jose@storopoli.com
 homepage:        https://github.com/storopoli/musig2
 category:        Cryptography
 build-type:      Simple
-tested-with:     GHC ==9.8.4
+tested-with:     GHC ==9.8.4, GHC ==9.10.3
 extra-doc-files: CHANGELOG
 description:
   Pure BIP0327 MuSig2 (partial)signatures with tweak support on the elliptic curve secp256k1.

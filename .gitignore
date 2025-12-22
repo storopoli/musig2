@@ -5,5 +5,5 @@ cabal.project.local
 # Nix
 .envrc
 .direnv/
-result/
+result
 .pre-commit-config.yaml
