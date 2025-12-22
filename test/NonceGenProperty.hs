@@ -7,6 +7,7 @@ import Crypto.Curve.Secp256k1 (mul, _CURVE_G, _CURVE_Q)
 import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce (..), SecNonceGenParams (..), publicNonce, secNonceGenWithRand)
 import Crypto.Curve.Secp256k1.MuSig2.Internal (hashTag, integerToBytes32, xorByteStrings)
 import Data.ByteString ()
+import Data.Maybe (fromMaybe)
 import Test.Tasty
 import Test.Tasty.QuickCheck as QC
 import Util (Rand32 (..), Scalar (..))
@@ -31,7 +32,7 @@ prop_correctPubNonce :: Rand32 -> SecNonceGenParams -> Property
 prop_correctPubNonce (Rand32 rand) params =
   let sn@SecNonce{..} = secNonceGenWithRand rand params
       PubNonce r1 r2 = publicNonce sn
-   in r1 === mul _CURVE_G k1 .&&. r2 === mul _CURVE_G k2
+   in r1 === fromMaybe (error "Failed to multiply scalar by generator") (mul _CURVE_G k1) .&&. r2 === fromMaybe (error "Failed to multiply scalar by generator") (mul _CURVE_G k2)
 
 -- | Property: Generating with sk provided is equivalent to XORing rand with the aux hash and generating without sk
 prop_skConsistency :: Rand32 -> SecNonceGenParams -> Scalar -> Property

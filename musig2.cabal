@@ -1,6 +1,6 @@
 cabal-version:   3.0
 name:            musig2
-version:         0.1.0
+version:         0.1.1
 synopsis:        MuSig2 library
 license:         MIT
 license-file:    LICENSE
@@ -9,7 +9,7 @@ maintainer:      jose@storopoli.com
 homepage:        https://github.com/storopoli/musig2
 category:        Cryptography
 build-type:      Simple
-tested-with:     GHC ==9.8.4
+tested-with:     GHC ==9.8.4 || ==9.10.3
 extra-doc-files: CHANGELOG
 description:
   Pure BIP0327 MuSig2 (partial)signatures with tweak support on the elliptic curve secp256k1.
@@ -31,7 +31,7 @@ library
     , bytestring         >=0.9  && <0.13
     , containers         >=0.6  && <0.9
     , entropy            >=0.4  && <0.5
-    , ppad-secp256k1     >=0.3  && <0.5
+    , ppad-secp256k1     >=0.3  && <0.6
     , ppad-sha256        >=0.2  && <0.3.0
 
 test-suite musig2-tests

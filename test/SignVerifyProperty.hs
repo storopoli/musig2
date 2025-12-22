@@ -5,7 +5,7 @@ module SignVerifyProperty (propertySignVerify) where
 import Crypto.Curve.Secp256k1 (derive_pub, _CURVE_Q)
 import Crypto.Curve.Secp256k1.MuSig2 (SecKey (..), SecNonce (..), aggNonces, mkSessionContext, partialSigVerify, publicNonce, sign)
 import Data.ByteString (ByteString)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 import Test.Tasty
 import Test.Tasty.QuickCheck as QC
 import Util ()
@@ -23,7 +23,7 @@ propertySignVerify =
 -- | Property: Generated signatures are in the valid range \([0, Q-1]\).
 prop_validSignatureRange :: SecNonce -> SecKey -> ByteString -> Property
 prop_validSignatureRange secNonce secKey@(SecKey sk) msg =
-  let pubkey = derive_pub sk
+  let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub sk
       pubNonce = publicNonce secNonce
       pubNonces = [pubNonce]
       pubkeys = [pubkey]
@@ -35,7 +35,7 @@ prop_validSignatureRange secNonce secKey@(SecKey sk) msg =
 -- | Property: A signature created with sign verifies with 'partialSigVerify'.
 prop_signVerifyRoundtrip :: SecNonce -> SecKey -> ByteString -> Property
 prop_signVerifyRoundtrip secNonce secKey@(SecKey sk) msg =
-  let pubkey = derive_pub sk
+  let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub sk
       pubNonce = publicNonce secNonce
       pubNonces = [pubNonce]
       pubkeys = [pubkey]
@@ -49,7 +49,7 @@ prop_signVerifyRoundtrip secNonce secKey@(SecKey sk) msg =
 -- | Property: Signing the same message with the same parameters produces the same signature.
 prop_signatureDeterminism :: SecNonce -> SecKey -> ByteString -> Property
 prop_signatureDeterminism secNonce secKey@(SecKey sk) msg =
-  let pubkey = derive_pub sk
+  let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub sk
       pubNonce = publicNonce secNonce
       pubNonces = [pubNonce]
       pubkeys = [pubkey]
@@ -62,7 +62,7 @@ prop_signatureDeterminism secNonce secKey@(SecKey sk) msg =
 -- | Property: Using an invalid signer index should fail verification.
 prop_invalidSignerIndex :: SecNonce -> SecKey -> ByteString -> Property
 prop_invalidSignerIndex secNonce secKey@(SecKey sk) msg =
-  let pubkey = derive_pub sk
+  let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub sk
       pubNonce = publicNonce secNonce
       pubNonces = [pubNonce]
       pubkeys = [pubkey]

@@ -37,8 +37,8 @@ A sample GHCi session:
 > let sec2 = MuSig2.SecKey 0x68E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF
 >
 > -- derive public keys
-> let pub1 = Secp256k1.derive_pub 0xB7E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF
-> let pub2 = Secp256k1.derive_pub 0x68E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF
+> let Just pub1 = Secp256k1.derive_pub 0xB7E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF
+> let Just pub2 = Secp256k1.derive_pub 0x68E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEF
 > let pubkeys = [pub1, pub2]
 >
 > -- create key aggregation context
@@ -188,7 +188,7 @@ sign secnonce sk ctx =
     -- gaccVal == 1 means no negation, gaccVal == n-1 means negation
     parityFromGacc = gaccVal /= 1
     d = if parityFromGacc /= oddAggPk then _CURVE_Q - d' else d'
-    p = derive_pub d' -- Use original secret key for public key derivation
+    p = fromMaybe (error "musig2 (sign): failed to derive public key") $ derive_pub d' -- Use original secret key for public key derivation
     a = computeKeyAggCoef p publicKeys
     -- if has_even_Y(R):
     --   k = k1 + b*k2
@@ -198,7 +198,9 @@ sign secnonce sk ctx =
     b = getSigningNonceCoeff ctx
     k = if isEvenPub nonce then k1 + b * k2 else _CURVE_Q - (k1 + b * k2)
     s = modQ (k + e * a * d)
-    pubNonce' = PubNonce (mul _CURVE_G secnonce.k1) (mul _CURVE_G secnonce.k2)
+    r1' = fromMaybe (error "musig2 (sign): failed to compute r1") $ mul _CURVE_G secnonce.k1
+    r2' = fromMaybe (error "musig2 (sign): failed to compute r2") $ mul _CURVE_G secnonce.k2
+    pubNonce' = PubNonce r1' r2'
    in
     if partialSigVerifyInternal s pubNonce' p ctx then s else error "musig2 (sign): could not verify partial signature against public nonce, public key and session context"
 
@@ -264,7 +266,8 @@ partialSigVerifyInternal partial pubnonce pk ctx =
     finalNonce = getSigningNonce ctx -- This is the final aggregate nonce used for evenness check
     s = if partial < 0 || partial >= _CURVE_Q then error "musig2 (partialSigVerifyInternal): partial signature must be within curve order." else partial
     -- Reconstruct the individual's effective nonce: R_s1 + b * R_s2
-    re' = add r1' $ mul r2' b
+    r2b = fromMaybe (error "musig2 (partialSigVerifyInternal): failed to compute r2 * b") $ mul r2' b
+    re' = add r1' r2b
     -- Negate individual nonce if final aggregate nonce has odd Y
     re = if isEvenPub finalNonce then re' else neg re'
     a = computeKeyAggCoef pk publicKeys
@@ -272,8 +275,9 @@ partialSigVerifyInternal partial pubnonce pk ctx =
     g = if oddAggPk then _CURVE_Q - 1 else 1
     -- Apply parity accumulator: gacc is accumulated parity factor
     g' = modQ (g * gaccVal)
-    sG = mul _CURVE_G s
-    sG' = re `add` mul pk (modQ (e * a * g'))
+    sG = fromMaybe (error "musig2 (partialSigVerifyInternal): failed to compute s * G") $ mul _CURVE_G s
+    pkMul = fromMaybe (error "musig2 (partialSigVerifyInternal): failed to compute pk multiplication") $ mul pk (modQ (e * a * g'))
+    sG' = re `add` pkMul
    in
     sG == sG'
 
@@ -402,7 +406,8 @@ getSigningNonce ctx =
     b = getSigningNonceCoeff ctx
     aggNonce = ctx.aggNonce
     aggNonce' = if aggNonce.r1 == _CURVE_ZERO then PubNonce _CURVE_G aggNonce.r2 else aggNonce
-    finalNonce = add aggNonce'.r1 (mul aggNonce'.r2 b)
+    r2b = fromMaybe (error "musig2 (getSigningNonce): failed to compute r2 * b") $ mul aggNonce'.r2 b
+    finalNonce = add aggNonce'.r1 r2b
    in
     if finalNonce == _CURVE_ZERO then _CURVE_G else finalNonce
 
@@ -453,11 +458,13 @@ getSigningHash ctx =
 
 -- | Tweak that can be added to an aggregated 'Pub'key.
 data Tweak
-  = -- | X-only tweak required by Taproot tweaking to add script paths to a Taproot output.
-    -- See [BIP341](https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki).
+  = {- | X-only tweak required by Taproot tweaking to add script paths to a Taproot output.
+    See [BIP341](https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki).
+    -}
     XOnlyTweak !Integer
-  | -- | Plain tweak that can be used to derive child aggregated 'Pub'keys per
-    -- [BIP32](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)
+  | {- | Plain tweak that can be used to derive child aggregated 'Pub'keys per
+    [BIP32](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)
+    -}
     PlainTweak !Integer
   deriving (Read, Show, Eq, Ord, Generic)
 
@@ -477,7 +484,9 @@ applyTweak ctx newTweak =
         PlainTweak t ->
           -- Plain tweak: g = 1, Q' = g*Q + t*G, tacc' = t + g*tacc, gacc' = g*gacc
           let g = 1
-              tweakedPk = add (mul pubkey g) (mul _CURVE_G t)
+              pubkeyMul = fromMaybe (error "musig2 (applyTweak): failed to compute pubkey * g") $ mul pubkey g
+              tG = fromMaybe (error "musig2 (applyTweak): failed to compute t * G") $ mul _CURVE_G t
+              tweakedPk = add pubkeyMul tG
               newAccTweak = modQ (t + (g * accTweakVal))
               newGacc = modQ (g * gaccIn)
            in if tweakedPk == _CURVE_ZERO
@@ -486,7 +495,9 @@ applyTweak ctx newTweak =
         XOnlyTweak t ->
           -- X-only tweak: g = 1 if even Y, g = n-1 if odd Y, tacc' = t + g*tacc
           let g = if isEvenPub pubkey then 1 else _CURVE_Q - 1
-              tweakedPk = add (mul pubkey g) (mul _CURVE_G t)
+              pubkeyMul = fromMaybe (error "musig2 (applyTweak): failed to compute pubkey * g") $ mul pubkey g
+              tG = fromMaybe (error "musig2 (applyTweak): failed to compute t * G") $ mul _CURVE_G t
+              tweakedPk = add pubkeyMul tG
               newAccTweak = modQ (t + (g * accTweakVal))
               newGacc = modQ (g * gaccIn)
            in if tweakedPk == _CURVE_ZERO
@@ -673,7 +684,10 @@ data PubNonce = PubNonce
 
 -- | Generates a 'PubNonce' from a 'SecNonce'.
 publicNonce :: SecNonce -> PubNonce
-publicNonce secNonce = PubNonce (mul _CURVE_G (k1 secNonce)) (mul _CURVE_G (k2 secNonce))
+publicNonce secNonce =
+  let r1' = fromMaybe (error "musig2 (publicNonce): failed to compute r1") $ mul _CURVE_G (k1 secNonce)
+      r2' = fromMaybe (error "musig2 (publicNonce): failed to compute r2") $ mul _CURVE_G (k2 secNonce)
+   in PubNonce r1' r2'
 
 -- | 'Data.Semigroup' implementation of 'PubNonce' for algebraic sound combination of public nonces.
 instance Semigroup PubNonce where

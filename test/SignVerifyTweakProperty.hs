@@ -5,7 +5,7 @@ module SignVerifyTweakProperty (propertySignVerifyTweak) where
 import Crypto.Curve.Secp256k1 (derive_pub, _CURVE_Q)
 import Crypto.Curve.Secp256k1.MuSig2 (SecKey (..), SecNonce (..), Tweak (..), aggNonces, mkSessionContext, partialSigVerify, publicNonce, sign)
 import Data.ByteString (ByteString)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Util ()
@@ -26,7 +26,7 @@ prop_validSignatureRangeWithTweaks :: SecNonce -> SecKey -> Property
 prop_validSignatureRangeWithTweaks secNonce secKey@(SecKey sk) =
   forAll (resize 5 $ listOf arbitrary) $ \tweaks ->
     forAll arbitrary $ \msg ->
-      let pubkey = derive_pub sk
+      let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub sk
           pubNonce = publicNonce secNonce
           pubNonces = [pubNonce]
           pubkeys = [pubkey]
@@ -40,7 +40,7 @@ prop_signVerifyRoundtripWithTweaks :: SecNonce -> SecKey -> Property
 prop_signVerifyRoundtripWithTweaks secNonce secKey@(SecKey sk) =
   forAll (resize 5 $ listOf arbitrary) $ \tweaks ->
     forAll arbitrary $ \msg ->
-      let pubkey = derive_pub sk
+      let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub sk
           pubNonce = publicNonce secNonce
           pubNonces = [pubNonce]
           pubkeys = [pubkey]
@@ -56,7 +56,7 @@ prop_signatureDeterminismWithTweaks :: SecNonce -> SecKey -> Property
 prop_signatureDeterminismWithTweaks secNonce secKey@(SecKey sk) =
   forAll (resize 5 $ listOf arbitrary) $ \tweaks ->
     forAll arbitrary $ \msg ->
-      let pubkey = derive_pub sk
+      let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub sk
           pubNonce = publicNonce secNonce
           pubNonces = [pubNonce]
           pubkeys = [pubkey]
@@ -69,7 +69,7 @@ prop_signatureDeterminismWithTweaks secNonce secKey@(SecKey sk) =
 -- | Property: Empty tweaks should produce the same result as no tweaks.
 prop_emptyTweaksEqualsNoTweaks :: SecNonce -> SecKey -> ByteString -> Property
 prop_emptyTweaksEqualsNoTweaks secNonce secKey@(SecKey sk) msg =
-  let pubkey = derive_pub sk
+  let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub sk
       pubNonce = publicNonce secNonce
       pubNonces = [pubNonce]
       pubkeys = [pubkey]
@@ -93,7 +93,7 @@ prop_plainTweaksCommutative secNonce secKey@(SecKey sk) t1 t2 msg =
     && t2 < _CURVE_Q
     && t1
       /= t2
-    ==> let pubkey = derive_pub sk
+    ==> let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub sk
             pubNonce = publicNonce secNonce
             pubNonces = [pubNonce]
             pubkeys = [pubkey]

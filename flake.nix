@@ -2,7 +2,7 @@
   description = "Haskell MuSig2 Library";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     flake-utils.url = "github:numtide/flake-utils";
     git-hooks.url = "github:cachix/git-hooks.nix";
   };
@@ -24,7 +24,8 @@
           config.allowBroken = true;
         };
         hlib = pkgs.haskell.lib;
-        hpkgs = pkgs.haskell.packages.ghc984.extend (
+        # GHC 9.10.3 is Nix 25.11's default
+        hpkgs = pkgs.haskell.packages.ghc9103.extend (
           new: old: {
             ${lib} = new.callCabal2nix lib ./. { };
             # tests are broken somehow in these deps
