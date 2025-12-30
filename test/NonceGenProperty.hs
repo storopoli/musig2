@@ -3,9 +3,9 @@
 
 module NonceGenProperty (propertyNonceGen) where
 
-import Crypto.Curve.Secp256k1 (mul, _CURVE_G, _CURVE_Q)
+import Crypto.Curve.Secp256k1 (mul, _CURVE_G)
 import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce (..), SecNonceGenParams (..), publicNonce, secNonceGenWithRand)
-import Crypto.Curve.Secp256k1.MuSig2.Internal (hashTag, integerToBytes32, xorByteStrings)
+import Crypto.Curve.Secp256k1.MuSig2.Internal (curveOrder, hashTag, integerToBytes32, xorByteStrings)
 import Data.ByteString ()
 import Data.Maybe (fromMaybe)
 import Test.Tasty
@@ -25,14 +25,14 @@ propertyNonceGen =
 prop_validRange :: Rand32 -> SecNonceGenParams -> Property
 prop_validRange (Rand32 rand) params =
   let SecNonce{..} = secNonceGenWithRand rand params
-   in (1 <= k1 && k1 < _CURVE_Q) .&&. (1 <= k2 && k2 < _CURVE_Q)
+   in (1 <= k1 && k1 < curveOrder) .&&. (1 <= k2 && k2 < curveOrder)
 
 -- | Property: The public nonce points correspond to G multiplied by k1 and k2
 prop_correctPubNonce :: Rand32 -> SecNonceGenParams -> Property
 prop_correctPubNonce (Rand32 rand) params =
   let sn@SecNonce{..} = secNonceGenWithRand rand params
       PubNonce r1 r2 = publicNonce sn
-   in r1 === fromMaybe (error "Failed to multiply scalar by generator") (mul _CURVE_G k1) .&&. r2 === fromMaybe (error "Failed to multiply scalar by generator") (mul _CURVE_G k2)
+   in r1 === fromMaybe (error "Failed to multiply scalar by generator") (mul _CURVE_G (fromInteger k1)) .&&. r2 === fromMaybe (error "Failed to multiply scalar by generator") (mul _CURVE_G (fromInteger k2))
 
 -- | Property: Generating with sk provided is equivalent to XORing rand with the aux hash and generating without sk
 prop_skConsistency :: Rand32 -> SecNonceGenParams -> Scalar -> Property

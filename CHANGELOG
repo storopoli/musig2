@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2 (2025-12-30)
+
+* Fix Hackage build failure by implementing `modQ` locally to support `ppad-secp256k1` 0.5.0+.
+
 ## 0.1.1 (2025-12-22)
 
 * Bump `ppad-secp256k1` to 0.5.0. More efficient and faster EC operations.

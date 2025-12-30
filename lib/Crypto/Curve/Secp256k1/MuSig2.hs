@@ -105,7 +105,7 @@ module Crypto.Curve.Secp256k1.MuSig2 (
 ) where
 
 import Control.Exception (ErrorCall (..), evaluate, throwIO, try)
-import Crypto.Curve.Secp256k1 (Projective, Pub, add, derive_pub, modQ, mul, neg, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
+import Crypto.Curve.Secp256k1 (Projective, Pub, add, derive_pub, mul, neg, serialize_point, _CURVE_G, _CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2.Internal
 import Data.Binary.Put (
   putWord32be,
@@ -145,7 +145,7 @@ aggPartials partials ctx =
     taccVal = maybe 0 getTweak $ tacc keyCtx
     gaccVal = gacc keyCtx
     -- BIP 327: Let g = 1 if has_even_y(Q), otherwise let g = -1 mod n
-    g = if isEvenPub aggPk then 1 else _CURVE_Q - 1
+    g = if isEvenPub aggPk then 1 else curveOrder - 1
     -- Apply accumulated parity factor
     g' = modQ (g * gaccVal)
     sSum = modQ $ sum partials
@@ -187,8 +187,8 @@ sign secnonce sk ctx =
     -- `d` is negated if exactly one of the parity accumulator OR the aggregated pubkey has odd parity.
     -- gaccVal == 1 means no negation, gaccVal == n-1 means negation
     parityFromGacc = gaccVal /= 1
-    d = if parityFromGacc /= oddAggPk then _CURVE_Q - d' else d'
-    p = fromMaybe (error "musig2 (sign): failed to derive public key") $ derive_pub d' -- Use original secret key for public key derivation
+    d = if parityFromGacc /= oddAggPk then curveOrder - d' else d'
+    p = fromMaybe (error "musig2 (sign): failed to derive public key") $ derive_pub (fromInteger d') -- Use original secret key for public key derivation
     a = computeKeyAggCoef p publicKeys
     -- if has_even_Y(R):
     --   k = k1 + b*k2
@@ -196,10 +196,10 @@ sign secnonce sk ctx =
     --   k = (n-k1) + b(n-k2)
     --     = n - (k1 + b*k2)
     b = getSigningNonceCoeff ctx
-    k = if isEvenPub nonce then k1 + b * k2 else _CURVE_Q - (k1 + b * k2)
+    k = if isEvenPub nonce then k1 + b * k2 else curveOrder - (k1 + b * k2)
     s = modQ (k + e * a * d)
-    r1' = fromMaybe (error "musig2 (sign): failed to compute r1") $ mul _CURVE_G secnonce.k1
-    r2' = fromMaybe (error "musig2 (sign): failed to compute r2") $ mul _CURVE_G secnonce.k2
+    r1' = fromMaybe (error "musig2 (sign): failed to compute r1") $ mul _CURVE_G (fromInteger secnonce.k1)
+    r2' = fromMaybe (error "musig2 (sign): failed to compute r2") $ mul _CURVE_G (fromInteger secnonce.k2)
     pubNonce' = PubNonce r1' r2'
    in
     if partialSigVerifyInternal s pubNonce' p ctx then s else error "musig2 (sign): could not verify partial signature against public nonce, public key and session context"
@@ -264,19 +264,19 @@ partialSigVerifyInternal partial pubnonce pk ctx =
     r2' = pubnonce.r2
     b = getSigningNonceCoeff ctx
     finalNonce = getSigningNonce ctx -- This is the final aggregate nonce used for evenness check
-    s = if partial < 0 || partial >= _CURVE_Q then error "musig2 (partialSigVerifyInternal): partial signature must be within curve order." else partial
+    s = if partial < 0 || partial >= curveOrder then error "musig2 (partialSigVerifyInternal): partial signature must be within curve order." else partial
     -- Reconstruct the individual's effective nonce: R_s1 + b * R_s2
-    r2b = fromMaybe (error "musig2 (partialSigVerifyInternal): failed to compute r2 * b") $ mul r2' b
+    r2b = fromMaybe (error "musig2 (partialSigVerifyInternal): failed to compute r2 * b") $ mul r2' (fromInteger b)
     re' = add r1' r2b
     -- Negate individual nonce if final aggregate nonce has odd Y
     re = if isEvenPub finalNonce then re' else neg re'
     a = computeKeyAggCoef pk publicKeys
     -- Calculate g factor: 1 if aggregate pubkey has even Y, n-1 if odd
-    g = if oddAggPk then _CURVE_Q - 1 else 1
+    g = if oddAggPk then curveOrder - 1 else 1
     -- Apply parity accumulator: gacc is accumulated parity factor
     g' = modQ (g * gaccVal)
-    sG = fromMaybe (error "musig2 (partialSigVerifyInternal): failed to compute s * G") $ mul _CURVE_G s
-    pkMul = fromMaybe (error "musig2 (partialSigVerifyInternal): failed to compute pk multiplication") $ mul pk (modQ (e * a * g'))
+    sG = fromMaybe (error "musig2 (partialSigVerifyInternal): failed to compute s * G") $ mul _CURVE_G (fromInteger s)
+    pkMul = fromMaybe (error "musig2 (partialSigVerifyInternal): failed to compute pk multiplication") $ mul pk (fromInteger (modQ (e * a * g')))
     sG' = re `add` pkMul
    in
     sG == sG'
@@ -327,7 +327,7 @@ mkKeyAggContext pks mTweak
   | Seq.length pks' > fromIntegral (maxBound :: Word32) = error "musig2 (mkKeyAggContext): too many public keys (max 2^32 - 1)"
   | _CURVE_ZERO `elem` pks' = error "musig2 (mkKeyAggContext): public key at point of infinity"
   | maybe False ((< 0) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be non-negative"
-  | maybe False ((>= _CURVE_Q) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be less than curve order"
+  | maybe False ((>= curveOrder) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be less than curve order"
   | otherwise = case aggPublicKeys pks' of
       Nothing -> error "musig2 (mkKeyAggContext): failed to aggregate public keys"
       Just aggPk
@@ -395,7 +395,7 @@ mkSessionContext aggNonce pks tweaks msg
   pks' = Seq.fromList (toList pks)
   tweaks' = Seq.fromList (toList tweaks)
   checkNeg = (< 0) . getTweak
-  checkOrder = (>= _CURVE_Q) . getTweak
+  checkOrder = (>= curveOrder) . getTweak
 
 {- | Gets the signing nonce as a 'Projective' following
 [BIP-0327 algorithm and recommendations](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#dealing-with-infinity-in-nonce-aggregation).
@@ -406,7 +406,7 @@ getSigningNonce ctx =
     b = getSigningNonceCoeff ctx
     aggNonce = ctx.aggNonce
     aggNonce' = if aggNonce.r1 == _CURVE_ZERO then PubNonce _CURVE_G aggNonce.r2 else aggNonce
-    r2b = fromMaybe (error "musig2 (getSigningNonce): failed to compute r2 * b") $ mul aggNonce'.r2 b
+    r2b = fromMaybe (error "musig2 (getSigningNonce): failed to compute r2 * b") $ mul aggNonce'.r2 (fromInteger b)
     finalNonce = add aggNonce'.r1 r2b
    in
     if finalNonce == _CURVE_ZERO then _CURVE_G else finalNonce
@@ -484,8 +484,8 @@ applyTweak ctx newTweak =
         PlainTweak t ->
           -- Plain tweak: g = 1, Q' = g*Q + t*G, tacc' = t + g*tacc, gacc' = g*gacc
           let g = 1
-              pubkeyMul = fromMaybe (error "musig2 (applyTweak): failed to compute pubkey * g") $ mul pubkey g
-              tG = fromMaybe (error "musig2 (applyTweak): failed to compute t * G") $ mul _CURVE_G t
+              pubkeyMul = fromMaybe (error "musig2 (applyTweak): failed to compute pubkey * g") $ mul pubkey (fromInteger g)
+              tG = fromMaybe (error "musig2 (applyTweak): failed to compute t * G") $ mul _CURVE_G (fromInteger t)
               tweakedPk = add pubkeyMul tG
               newAccTweak = modQ (t + (g * accTweakVal))
               newGacc = modQ (g * gaccIn)
@@ -494,9 +494,9 @@ applyTweak ctx newTweak =
                 else ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak), gacc = newGacc}
         XOnlyTweak t ->
           -- X-only tweak: g = 1 if even Y, g = n-1 if odd Y, tacc' = t + g*tacc
-          let g = if isEvenPub pubkey then 1 else _CURVE_Q - 1
-              pubkeyMul = fromMaybe (error "musig2 (applyTweak): failed to compute pubkey * g") $ mul pubkey g
-              tG = fromMaybe (error "musig2 (applyTweak): failed to compute t * G") $ mul _CURVE_G t
+          let g = if isEvenPub pubkey then 1 else curveOrder - 1
+              pubkeyMul = fromMaybe (error "musig2 (applyTweak): failed to compute pubkey * g") $ mul pubkey (fromInteger g)
+              tG = fromMaybe (error "musig2 (applyTweak): failed to compute t * G") $ mul _CURVE_G (fromInteger t)
               tweakedPk = add pubkeyMul tG
               newAccTweak = modQ (t + (g * accTweakVal))
               newGacc = modQ (g * gaccIn)
@@ -685,8 +685,8 @@ data PubNonce = PubNonce
 -- | Generates a 'PubNonce' from a 'SecNonce'.
 publicNonce :: SecNonce -> PubNonce
 publicNonce secNonce =
-  let r1' = fromMaybe (error "musig2 (publicNonce): failed to compute r1") $ mul _CURVE_G (k1 secNonce)
-      r2' = fromMaybe (error "musig2 (publicNonce): failed to compute r2") $ mul _CURVE_G (k2 secNonce)
+  let r1' = fromMaybe (error "musig2 (publicNonce): failed to compute r1") $ mul _CURVE_G (fromInteger (k1 secNonce))
+      r2' = fromMaybe (error "musig2 (publicNonce): failed to compute r2") $ mul _CURVE_G (fromInteger (k2 secNonce))
    in PubNonce r1' r2'
 
 -- | 'Data.Semigroup' implementation of 'PubNonce' for algebraic sound combination of public nonces.

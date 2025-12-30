@@ -5,8 +5,9 @@
 
 module Util (parsePoint, parseScalar, parsePubNonce, extractXOnly, decodeHex, Rand32 (..), Scalar (..)) where
 
-import Crypto.Curve.Secp256k1 (Projective, Pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_Q, _CURVE_ZERO)
+import Crypto.Curve.Secp256k1 (Projective, Pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce (..), SecNonceGenParams (..), Tweak (..))
+import Crypto.Curve.Secp256k1.MuSig2.Internal (curveOrder)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
@@ -50,8 +51,8 @@ instance Arbitrary Projective where
       ,
         ( 99
         , do
-            scalar <- choose (0, _CURVE_Q)
-            return (fromMaybe (error "Failed to multiply scalar by generator") $ mul _CURVE_G scalar)
+            scalar <- choose (0, curveOrder)
+            return (fromMaybe (error "Failed to multiply scalar by generator") $ mul _CURVE_G (fromInteger scalar))
         )
       ]
 
@@ -70,7 +71,7 @@ newtype Scalar = Scalar Integer deriving (Show, Eq)
 
 -- | 'Arbitrary' instance for 'Scalar' to be within curve order.
 instance Arbitrary Scalar where
-  arbitrary = Scalar <$> choose (1, _CURVE_Q - 1)
+  arbitrary = Scalar <$> choose (1, curveOrder - 1)
 
 -- | 32-byte 'ByteString' for testing hashes.
 newtype Rand32 = Rand32 ByteString deriving (Show, Eq)
@@ -132,8 +133,8 @@ instance Arbitrary PubNonce where
 -- | 'Arbitrary' instace of 'SecNonce'.
 instance Arbitrary SecNonce where
   arbitrary = do
-    k1 <- choose (1, _CURVE_Q - 1) -- Ensure non-zero
-    k2 <- choose (1, _CURVE_Q - 1) -- Ensure non-zero
+    k1 <- choose (1, curveOrder - 1) -- Ensure non-zero
+    k2 <- choose (1, curveOrder - 1) -- Ensure non-zero
     return SecNonce{k1 = k1, k2 = k2}
 
 {- | 'Show' instance for 'SecNonce'.
@@ -147,7 +148,7 @@ instance Show SecNonce where
 -- | 'Arbitrary' instace of 'SecKey'.
 instance Arbitrary SecKey where
   arbitrary = do
-    sk <- choose (1, _CURVE_Q - 1) -- Ensure non-zero
+    sk <- choose (1, curveOrder - 1) -- Ensure non-zero
     return (SecKey sk)
 
 {- | 'Show' instance for 'SecKey'.
@@ -160,7 +161,7 @@ instance Show SecKey where
 -- | 'Arbitrary' instance for 'Tweak'.
 instance Arbitrary Tweak where
   arbitrary = do
-    tweakValue <- choose (1, _CURVE_Q - 1) -- Ensure valid tweak value
+    tweakValue <- choose (1, curveOrder - 1) -- Ensure valid tweak value
     isXOnly <- arbitrary
     return $ if isXOnly then XOnlyTweak tweakValue else PlainTweak tweakValue
 

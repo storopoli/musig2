@@ -27,9 +27,11 @@ module Crypto.Curve.Secp256k1.MuSig2.Internal (
   hashTag,
   hashTagModQ,
   hashProjectivesTag,
+  modQ,
+  curveOrder,
 ) where
 
-import Crypto.Curve.Secp256k1 (Projective, Pub, add, modQ, mul, serialize_point, _CURVE_ZERO)
+import Crypto.Curve.Secp256k1 (Projective, Pub, add, mul, serialize_point, _CURVE_ZERO)
 import Crypto.Hash.SHA256 (hash)
 import Data.Bits (shiftR, xor, (.&.))
 import Data.ByteString (ByteString)
@@ -68,8 +70,8 @@ aggPublicKeys pks
       pure $ fold1WithDefault _CURVE_ZERO mulResults
  where
   pksSeq = Seq.fromList (toList pks)
-  coefs = fmap (`computeKeyAggCoef` pksSeq) pksSeq
-  aggPk i p = mul p i -- mul takes first point then scalar
+  coefs = fmap (fromInteger . (`computeKeyAggCoef` pksSeq)) pksSeq
+  aggPk i p = mul p i -- mul takes first point then scalar (i is now Wider)
   -- Safe fold1 that handles empty sequences
   fold1WithDefault def xs = case Seq.viewl xs of
     Seq.EmptyL -> def
@@ -152,3 +154,11 @@ isEvenPub pub = case BS.unpack (serialize_point pub) of
 -- | Gets the X-coordinate from a 'Pub'lic key as 'ByteString'
 xBytes :: Pub -> ByteString
 xBytes pk = BS.drop 1 $ serialize_point pk
+
+-- | The secp256k1 curve order (a mathematical constant).
+curveOrder :: Integer
+curveOrder = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
+-- | Modular reduction by the curve order.
+modQ :: Integer -> Integer
+modQ x = x `mod` curveOrder
