@@ -134,7 +134,7 @@ bytesToInteger = BS.foldl' (\acc b -> acc * 256 + fromIntegral b) 0
 
 -- | Converts an 'Integer' to a 32-byte big-endian 'ByteString'.
 integerToBytes32 :: Integer -> ByteString
-integerToBytes32 i = BS.pack $ reverse [fromInteger (i `shiftR` (8 * j)) .&. 0xff | j <- [0 .. 31]]
+integerToBytes32 i = BS.pack [fromInteger ((i `shiftR` (8 * (31 - j))) .&. 0xff) | j <- [0 .. 31]]
 
 -- | @XOR@s two 'ByteString's of same length.
 xorByteStrings :: ByteString -> ByteString -> ByteString
