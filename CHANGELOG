@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3 (2026-01-04)
+
+* Performance improvements:
+  - Cache `KeyAggContext` in `SessionContext` to avoid redundant EC operations
+  - Replace lazy `foldl` with strict `foldl'` to prevent space leaks
+  - Add strictness annotations to `SessionContext` fields
+  - Replace O(n) list indexing with O(log n) `Seq.lookup` in `partialSigVerify`
+  - Optimize `integerToBytes32` to eliminate intermediate list allocation
+  - Fix `NFData` instances in benchmarks for accurate measurements
+
 ## 0.1.2 (2025-12-30)
 
 * Fix Hackage build failure by implementing `modQ` locally to support `ppad-secp256k1` 0.5.0+.
