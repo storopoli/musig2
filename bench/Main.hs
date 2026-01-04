@@ -14,8 +14,8 @@ import Crypto.Curve.Secp256k1.MuSig2 (
   PubNonce (..),
   SecKey (..),
   SecNonce (..),
-  SecNonceGenParams,
-  SessionContext,
+  SecNonceGenParams (..),
+  SessionContext (..),
   Tweak (..),
  )
 import qualified Crypto.Curve.Secp256k1.MuSig2 as M
@@ -45,10 +45,12 @@ instance NFData KeyAggContext where
   rnf ctx = rnf (M.aggregatedPubkey ctx)
 
 instance NFData SessionContext where
-  rnf _ = () -- SessionContext contains multiple fields, but we'll keep it simple
+  rnf (SessionContext an ps ts m kc) =
+    rnf an `seq` rnf ps `seq` rnf ts `seq` rnf m `seq` rnf kc
 
 instance NFData SecNonceGenParams where
-  rnf _ = () -- SecNonceGenParams contains multiple fields, but we'll keep it simple
+  rnf (SecNonceGenParams pk sk apk mg ei) =
+    rnf pk `seq` rnf sk `seq` rnf apk `seq` rnf mg `seq` rnf ei
 
 -- | Main benchmark function.
 main :: IO ()

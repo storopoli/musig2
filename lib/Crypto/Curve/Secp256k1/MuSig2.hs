@@ -82,7 +82,7 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   partialSigVerify,
   aggPartials,
   -- MuSig2 Session
-  SessionContext,
+  SessionContext (..),
   mkSessionContext,
   -- Key aggregation
   KeyAggContext,
@@ -115,7 +115,7 @@ import Data.Binary.Put (
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
-import Data.Foldable (toList)
+import Data.Foldable (foldl', toList)
 import Data.List (isPrefixOf)
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Sequence (Seq)
@@ -136,11 +136,9 @@ aggPartials ::
   ByteString
 aggPartials partials ctx =
   let
-    publicKeys = pks ctx
-    tweaks' = tweaks ctx
     nonce = getSigningNonce ctx
     e = bytesToInteger $ getSigningHash ctx
-    keyCtx = if Seq.null tweaks' then mkKeyAggContext publicKeys Nothing else foldl applyTweak (mkKeyAggContext publicKeys Nothing) tweaks'
+    keyCtx = cachedKeyAggCtx ctx
     aggPk = q keyCtx
     taccVal = maybe 0 getTweak $ tacc keyCtx
     gaccVal = gacc keyCtx
@@ -174,10 +172,9 @@ sign ::
 sign secnonce sk ctx =
   let
     publicKeys = pks ctx
-    tweaks' = tweaks ctx
     nonce = getSigningNonce ctx
     e = bytesToInteger $ getSigningHash ctx
-    keyCtx = if Seq.null tweaks' then mkKeyAggContext publicKeys Nothing else foldl applyTweak (mkKeyAggContext publicKeys Nothing) tweaks'
+    keyCtx = cachedKeyAggCtx ctx
     aggPk = q keyCtx
     oddAggPk = not $ isEvenPub aggPk
     gaccVal = gacc keyCtx
@@ -229,9 +226,14 @@ partialSigVerify ::
 partialSigVerify partial nonces pks tweaks msg idx =
   let aggNonce = fromJust $ aggNonces nonces
       ctx = mkSessionContext aggNonce pks tweaks msg
-      noncesList = toList nonces
-      pk = if idx < length pks then toList pks !! idx else error "musig2 (partialSigVerify): signer index out of range of the list of public keys"
-      pubnonce = if idx < length noncesList then noncesList !! idx else error "musig2 (partialSigVerify): signer index out of range of the list of public nonces"
+      noncesSeq = Seq.fromList (toList nonces)
+      pksSeq = Seq.fromList (toList pks)
+      pk = case Seq.lookup idx pksSeq of
+        Just p -> p
+        Nothing -> error "musig2 (partialSigVerify): signer index out of range of the list of public keys"
+      pubnonce = case Seq.lookup idx noncesSeq of
+        Just n -> n
+        Nothing -> error "musig2 (partialSigVerify): signer index out of range of the list of public nonces"
    in partialSigVerifyInternal partial pubnonce pk ctx
 
 {- | Verifies a 'PartialSignature'.
@@ -254,8 +256,7 @@ partialSigVerifyInternal ::
 partialSigVerifyInternal partial pubnonce pk ctx =
   let
     publicKeys = pks ctx
-    tweaks' = tweaks ctx
-    keyCtx = if Seq.null tweaks' then mkKeyAggContext publicKeys Nothing else foldl applyTweak (mkKeyAggContext publicKeys Nothing) tweaks'
+    keyCtx = cachedKeyAggCtx ctx
     aggPk = q keyCtx
     oddAggPk = not $ isEvenPub aggPk
     gaccVal = gacc keyCtx
@@ -342,14 +343,16 @@ mkKeyAggContext pks mTweak
 
 -- | Session aggregation context that holds the relevant context for a MuSig2 signing session.
 data SessionContext = SessionContext
-  { aggNonce :: PubNonce
+  { aggNonce :: !PubNonce
   -- ^ Aggregated 'PubNonce'.
-  , pks :: Seq Pub
+  , pks :: !(Seq Pub)
   -- ^ Ordered 'Seq' of 'Pub'keys.
-  , tweaks :: Seq Tweak
+  , tweaks :: !(Seq Tweak)
   -- ^ 'Seq' of 'Tweak's.
-  , msg :: ByteString
+  , msg :: !ByteString
   -- ^ Message to be signed.
+  , cachedKeyAggCtx :: !KeyAggContext
+  -- ^ Cached 'KeyAggContext' to avoid recomputation.
   }
 
 {- | Creates a 'SessionContext'.
@@ -390,12 +393,16 @@ mkSessionContext aggNonce pks tweaks msg
       Nothing -> error "musig2 (mkSessionContext): failed to aggregate public keys"
       Just aggPk
         | aggPk == _CURVE_ZERO -> error "musig2 (mkSessionContext): aggregated public key is point at infinity"
-        | otherwise -> SessionContext aggNonce pks' tweaks' msg
+        | otherwise -> SessionContext aggNonce pks' tweaks' msg keyCtx
  where
   pks' = Seq.fromList (toList pks)
   tweaks' = Seq.fromList (toList tweaks)
   checkNeg = (< 0) . getTweak
   checkOrder = (>= curveOrder) . getTweak
+  -- Compute and cache the KeyAggContext once
+  keyCtx =
+    let baseCtx = mkKeyAggContext pks' Nothing
+     in if Seq.null tweaks' then baseCtx else foldl' applyTweak baseCtx tweaks'
 
 {- | Gets the signing nonce as a 'Projective' following
 [BIP-0327 algorithm and recommendations](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#dealing-with-infinity-in-nonce-aggregation).
@@ -419,12 +426,7 @@ getSigningNonceCoeff ctx =
   let
     aggNonce = ctx.aggNonce
     aggNonce' = if aggNonce.r1 == _CURVE_ZERO then PubNonce _CURVE_G aggNonce.r2 else aggNonce
-    -- Apply tweaks to get the correct aggregate public key
-    keyCtx =
-      if Seq.null (tweaks ctx)
-        then mkKeyAggContext (pks ctx) Nothing
-        else foldl applyTweak (mkKeyAggContext (pks ctx) Nothing) (tweaks ctx)
-    aggPubKey = q keyCtx
+    aggPubKey = q (cachedKeyAggCtx ctx)
     msg = ctx.msg
     nonceBytes = serialize_point aggNonce'.r1 <> serialize_point aggNonce'.r2
     qBytes = xBytes aggPubKey
@@ -442,12 +444,7 @@ In the BIP-0327 it is referred as @e@.
 getSigningHash :: SessionContext -> ByteString
 getSigningHash ctx =
   let
-    -- Apply tweaks to get the correct aggregate public key
-    keyCtx =
-      if Seq.null (tweaks ctx)
-        then mkKeyAggContext (pks ctx) Nothing
-        else foldl applyTweak (mkKeyAggContext (pks ctx) Nothing) (tweaks ctx)
-    aggPubKey = q keyCtx
+    aggPubKey = q (cachedKeyAggCtx ctx)
     qBytes = xBytes aggPubKey
     msg = ctx.msg
     nonce = getSigningNonce ctx
@@ -708,6 +705,8 @@ instance Monoid PubNonce where
 aggNonces :: (Traversable t) => t PubNonce -> Maybe PubNonce
 aggNonces nonces
   | Seq.null noncesSeq = Nothing
-  | otherwise = Just $ foldl1 (<>) noncesSeq
+  | otherwise = case Seq.viewl noncesSeq of
+      Seq.EmptyL -> Nothing
+      x Seq.:< xs -> Just $! foldl' (<>) x xs
  where
   noncesSeq = Seq.fromList (toList nonces)
