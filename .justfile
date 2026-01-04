@@ -9,34 +9,32 @@ default:
     just --list
 
 # Build all projects
+[group('build')]
 build:
     cabal build all
 
-# Lint with `hlint`
-lint:
-    hlint .
-
-# Run tests
-test:
-    cabal test
-
-# Clean build artifacts
-clean:
-    cabal clean
-
 # Install dependencies
+[group('build')]
 deps:
     cabal build --dependencies-only all
 
 # Instantiate a `ghci` REPL for the project
+[group('build')]
 repl:
     cabal repl musig2
 
-# Builds the documentation with `haddock` and opens in the browser.
-doc:
-    cabal haddock --open
+# Clean build artifacts
+[group('build')]
+clean:
+    cabal clean
+
+# Run tests
+[group('test')]
+test:
+    cabal test
 
 # Test documentation coverage and quality
+[group('test')]
 test-docs:
     #!/usr/bin/env bash
     set -e
@@ -52,10 +50,17 @@ test-docs:
     fi
     echo "✅ Documentation test passed"
 
+# Lint with `hlint`
+[group('lint')]
+lint:
+    hlint .
+
 # Format workspace
+[group('format')]
 format: format-hs format-cabal format-nix
 
 # Format all Haskell files (if `fourmolu` is installed)
+[group('format')]
 format-hs:
     #!/usr/bin/env bash
     if command -v fourmolu &> /dev/null; then
@@ -67,6 +72,7 @@ format-hs:
     fi
 
 # Format all Cabal files (if `cabal-fmt` is installed)
+[group('format')]
 format-cabal:
     #!/usr/bin/env bash
     if command -v cabal-fmt &> /dev/null; then
@@ -76,6 +82,7 @@ format-cabal:
     fi
 
 # Format all Nix files (if `nixfmt-rfc-style` is installed)
+[group('format')]
 format-nix:
     #!/usr/bin/env bash
     if command -v nixfmt &> /dev/null; then
@@ -84,22 +91,13 @@ format-nix:
         echo "nixfmt not installed, skipping format"
     fi
 
-# Run benchmarks
-benchmark:
-    cabal bench musig2-bench
+# Builds the documentation with `haddock` and opens in the browser.
+[group('docs')]
+doc:
+    cabal haddock --open
 
-# Run benchmarks with HTML output
-benchmark-html:
-    cabal bench musig2-bench --benchmark-options="--output benchmark_results.html"
-
-# Run specific benchmark group (e.g., just benchmark-group key_aggregation)
-benchmark-group GROUP:
-    cabal bench musig2-bench --benchmark-options="-m pattern {{GROUP}}"
-
-# List all available benchmarks
-benchmark-list:
-    cabal bench musig2-bench --benchmark-options="-l"
-
+# Publish docs to Hackage
+[group('docs')]
 publish-docs:
     #!/usr/bin/env sh
     set -e
@@ -112,3 +110,22 @@ publish-docs:
 
     cabal upload -d --publish $dir/*-docs.tar.gz
 
+# Run benchmarks
+[group('benchmark')]
+benchmark:
+    cabal bench musig2-bench
+
+# Run benchmarks with HTML output
+[group('benchmark')]
+benchmark-html:
+    cabal bench musig2-bench --benchmark-options="--output benchmark_results.html"
+
+# Run specific benchmark group (e.g., just benchmark-group key_aggregation)
+[group('benchmark')]
+benchmark-group GROUP:
+    cabal bench musig2-bench --benchmark-options="-m pattern {{GROUP}}"
+
+# List all available benchmarks
+[group('benchmark')]
+benchmark-list:
+    cabal bench musig2-bench --benchmark-options="-l"
