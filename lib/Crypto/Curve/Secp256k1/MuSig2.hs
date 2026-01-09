@@ -115,7 +115,7 @@ import Data.Binary.Put (
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
-import Data.Foldable (foldl', toList)
+import Data.Foldable (toList)
 import Data.List (isPrefixOf)
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Sequence (Seq)
