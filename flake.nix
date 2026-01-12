@@ -85,6 +85,7 @@
             hpkgs.cabal-fmt
             hpkgs.hlint
             pkgs.just
+            pkgs.llvmPackages.llvm
           ]
           ++ checks.pre-commit-check.enabledPackages;
 

@@ -71,15 +71,23 @@ jobs:
         run: nix flake check
 
   build:
-    name: "${{ matrix.os-name }} - Build, Test, and Lint"
+    name: "${{ matrix.os-name }}${{ matrix.llvm && ' (LLVM)' || '' }} - Build, Test, and Lint"
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
             os-name: "Linux"
+            llvm: false
+          - os: ubuntu-latest
+            os-name: "Linux"
+            llvm: true
           - os: macos-latest
             os-name: "Apple Silicon"
+            llvm: false
+          - os: macos-latest
+            os-name: "Apple Silicon"
+            llvm: true
     permissions:
       contents: read
       actions: read
@@ -119,7 +127,7 @@ jobs:
         run: nix build -L --show-trace
 
       - name: "Build library"
-        run: nix develop -c just build
+        run: nix develop -c just ${{ matrix.llvm && 'build-llvm' || 'build' }}
 
       - name: "Format check"
         run: nix develop -c just format
@@ -128,4 +136,4 @@ jobs:
         run: nix develop -c just lint
 
       - name: "Test library"
-        run: nix develop -c just test
+        run: nix develop -c just ${{ matrix.llvm && 'test-llvm' || 'test' }}

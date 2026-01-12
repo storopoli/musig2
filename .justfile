@@ -13,6 +13,11 @@ default:
 build:
     cabal build all
 
+# Build all projects with LLVM backend
+[group('build')]
+build-llvm:
+    cabal build all -fllvm
+
 # Install dependencies
 [group('build')]
 deps:
@@ -32,6 +37,11 @@ clean:
 [group('test')]
 test:
     cabal test
+
+# Run tests with LLVM backend
+[group('test')]
+test-llvm:
+    cabal test -fllvm
 
 # Test documentation coverage and quality
 [group('test')]
