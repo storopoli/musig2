@@ -1,0 +1,139 @@
+name: Haskell CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+permissions: {}
+
+jobs:
+  build:
+    name: "GHC ${{ matrix.ghc }}${{ matrix.llvm && ' (LLVM)' || '' }} on ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        ghc: ['9.8', '9.10', '9.12']
+        os: [ubuntu-latest, macos-latest]
+        llvm: [false, true]
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install LLVM (Linux)
+        if: matrix.llvm && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm
+
+      - name: Install LLVM (macOS)
+        if: matrix.llvm && runner.os == 'macOS'
+        run: brew install llvm
+
+      - name: Setup Haskell
+        uses: haskell-actions/setup@dc63c94789664bb2910876ec3dfeeaa24d23b96b # v2.10.2
+        id: setup
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: 'latest'
+
+      - name: Cache cabal store
+        uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        with:
+          path: ${{ steps.setup.outputs.cabal-store }}
+          key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ hashFiles('**/*.cabal') }}
+          restore-keys: ${{ runner.os }}-ghc-${{ matrix.ghc }}-
+
+      - name: Install dependencies
+        run: cabal build --dependencies-only all
+
+      - name: Build
+        run: cabal build all ${{ matrix.llvm && '-fllvm' || '' }}
+
+      - name: Test
+        run: cabal test ${{ matrix.llvm && '-fllvm' || '' }}
+
+  format:
+    name: Fourmolu
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run Fourmolu
+        uses: haskell-actions/run-fourmolu@3b7702b41516aa428dfe6e295dc73476ae58f69e # v11
+        with:
+          pattern: |
+            lib/**/*.hs
+            test/**/*.hs
+            bench/**/*.hs
+
+  cabal-fmt:
+    name: cabal-fmt
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Haskell
+        uses: haskell-actions/setup@dc63c94789664bb2910876ec3dfeeaa24d23b96b # v2.10.2
+        id: setup-cabal-fmt
+        with:
+          ghc-version: '9.8'
+          cabal-version: 'latest'
+
+      - name: Cache cabal-fmt
+        uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        with:
+          path: ${{ steps.setup-cabal-fmt.outputs.cabal-store }}
+          key: ${{ runner.os }}-cabal-fmt-${{ hashFiles('**/*.cabal') }}
+          restore-keys: ${{ runner.os }}-cabal-fmt-
+
+      - name: Install cabal-fmt
+        run: cabal install cabal-fmt --ignore-project
+
+      - name: Check cabal formatting
+        run: |
+          cabal-fmt -c musig2.cabal || {
+            echo "::error::cabal file is not formatted. Run 'cabal-fmt -i musig2.cabal'"
+            exit 1
+          }
+
+  lint:
+    name: HLint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup HLint
+        uses: haskell-actions/hlint-setup@fe9cd1cd1af94a23900c06738e73f6ddb092966a # v2.4.10
+
+      - name: Run HLint
+        uses: haskell-actions/hlint-run@eaca4cfbf4a69f4eb875df38b6bc3e1657020378 # v2.4.10
+        with:
+          path: '["lib/", "test/", "bench/"]'
+          fail-on: warning
