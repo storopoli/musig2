@@ -32,11 +32,14 @@ jobs:
         if: matrix.llvm && runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm
+          sudo apt-get install -y llvm-15
+          echo "/usr/lib/llvm-15/bin" >> $GITHUB_PATH
 
       - name: Install LLVM (macOS)
         if: matrix.llvm && runner.os == 'macOS'
-        run: brew install llvm
+        run: |
+          brew install llvm@15
+          echo "$(brew --prefix llvm@15)/bin" >> $GITHUB_PATH
 
       - name: Setup Haskell
         uses: haskell-actions/setup@dc63c94789664bb2910876ec3dfeeaa24d23b96b # v2.10.2
