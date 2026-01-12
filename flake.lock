@@ -150,26 +150,26 @@
       "flake": false,
       "locked": {
         "lastModified": 1000000000,
-        "narHash": "sha256-v5RyLLt8+DNVd+etX0WaDLdPhi/OCY/zdgFqPr7P3h4=",
+        "narHash": "sha256-NCO8RPrstJtzCfhsdi5R/D3ADQui+DZ9QCPRgfSY1cM=",
         "type": "tarball",
-        "url": "https://hackage.haskell.org/package/ppad-secp256k1-0.5.2/ppad-secp256k1-0.5.2.tar.gz"
+        "url": "https://hackage.haskell.org/package/ppad-secp256k1-0.5.3/ppad-secp256k1-0.5.3.tar.gz"
       },
       "original": {
         "type": "tarball",
-        "url": "https://hackage.haskell.org/package/ppad-secp256k1-0.5.2/ppad-secp256k1-0.5.2.tar.gz"
+        "url": "https://hackage.haskell.org/package/ppad-secp256k1-0.5.3/ppad-secp256k1-0.5.3.tar.gz"
       }
     },
     "ppad-sha256-src": {
       "flake": false,
       "locked": {
         "lastModified": 1000000000,
-        "narHash": "sha256-VjB5vpqp6cVlW3GN92cjhc2QwI0Ksh9/K7ydrLGW6cY=",
+        "narHash": "sha256-XNdPQJFMTCS2Yyo9vb/XaoczEe0PpS/U+GpkCWYBKLg=",
         "type": "tarball",
-        "url": "https://hackage.haskell.org/package/ppad-sha256-0.2.4/ppad-sha256-0.2.4.tar.gz"
+        "url": "https://hackage.haskell.org/package/ppad-sha256-0.3.0/ppad-sha256-0.3.0.tar.gz"
       },
       "original": {
         "type": "tarball",
-        "url": "https://hackage.haskell.org/package/ppad-sha256-0.2.4/ppad-sha256-0.2.4.tar.gz"
+        "url": "https://hackage.haskell.org/package/ppad-sha256-0.3.0/ppad-sha256-0.3.0.tar.gz"
       }
     },
     "root": {
