@@ -137,13 +137,13 @@
       "flake": false,
       "locked": {
         "lastModified": 1000000000,
-        "narHash": "sha256-QNFXFagLfVtV2gTFw9ckwiDCitdiYeKAr98ZIwvPzlY=",
+        "narHash": "sha256-snJ7B2Cz2iU6z5u+VoHU+oc+yUtw5MIl05AEGRNQvL8=",
         "type": "tarball",
-        "url": "https://hackage.haskell.org/package/ppad-hmac-drbg-0.1.3/ppad-hmac-drbg-0.1.3.tar.gz"
+        "url": "https://hackage.haskell.org/package/ppad-hmac-drbg-0.2.1/ppad-hmac-drbg-0.2.1.tar.gz"
       },
       "original": {
         "type": "tarball",
-        "url": "https://hackage.haskell.org/package/ppad-hmac-drbg-0.1.3/ppad-hmac-drbg-0.1.3.tar.gz"
+        "url": "https://hackage.haskell.org/package/ppad-hmac-drbg-0.2.1/ppad-hmac-drbg-0.2.1.tar.gz"
       }
     },
     "ppad-secp256k1-src": {
