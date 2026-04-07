@@ -7,3 +7,9 @@ updates:
       interval: "monthly"
     cooldown:
       default-days: 14
+  - package-ecosystem: "nix"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 14
