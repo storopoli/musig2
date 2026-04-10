@@ -23,7 +23,7 @@ propertySignVerify =
 -- | Property: Generated signatures are in the valid range \([0, Q-1]\).
 prop_validSignatureRange :: SignerMaterial -> ByteString -> Property
 prop_validSignatureRange signer msg =
-  let pubNonce = publicNonce signer.signerSecNonce
+  let pubNonce = unsafeRight $ publicNonce signer.signerSecNonce
       pubNonces = [pubNonce]
       pubkeys = [signer.signerPubKey]
       aggNonce = unsafeRight $ aggNonces pubNonces
@@ -34,7 +34,7 @@ prop_validSignatureRange signer msg =
 -- | Property: A signature created with sign verifies with 'partialSigVerify'.
 prop_signVerifyRoundtrip :: SignerMaterial -> ByteString -> Property
 prop_signVerifyRoundtrip signer msg =
-  let pubNonce = publicNonce signer.signerSecNonce
+  let pubNonce = unsafeRight $ publicNonce signer.signerSecNonce
       pubNonces = [pubNonce]
       pubkeys = [signer.signerPubKey]
       aggNonce = unsafeRight $ aggNonces pubNonces
@@ -46,7 +46,7 @@ prop_signVerifyRoundtrip signer msg =
 -- | Property: Signing the same message with the same parameters produces the same signature.
 prop_signatureDeterminism :: SignerMaterial -> ByteString -> Property
 prop_signatureDeterminism signer msg =
-  let pubNonce = publicNonce signer.signerSecNonce
+  let pubNonce = unsafeRight $ publicNonce signer.signerSecNonce
       pubNonces = [pubNonce]
       pubkeys = [signer.signerPubKey]
       aggNonce = unsafeRight $ aggNonces pubNonces
@@ -58,7 +58,7 @@ prop_signatureDeterminism signer msg =
 -- | Property: Using an invalid signer index should fail verification.
 prop_invalidSignerIndex :: SignerMaterial -> ByteString -> Property
 prop_invalidSignerIndex signer msg =
-  let pubNonce = publicNonce signer.signerSecNonce
+  let pubNonce = unsafeRight $ publicNonce signer.signerSecNonce
       pubNonces = [pubNonce]
       pubkeys = [signer.signerPubKey]
       aggNonce = unsafeRight $ aggNonces pubNonces

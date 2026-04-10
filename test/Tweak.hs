@@ -102,8 +102,8 @@ makeValidTestCase i (keyIndices, nonceIndices, tweakIndices, isXOnly, signerInde
 makeErrorTestCase :: Int -> ([Int], [Bool], String, String) -> TestTree
 makeErrorTestCase i (tweakIndices, isXOnly, expectedError, comment) =
   testCase ("BIP-0327 error test vector " <> show (i + 1) <> ": " <> comment) $ do
-    let selectedKeys = [inputPubkeys !! 1, inputPubkeys !! 2, head inputPubkeys] -- [1, 2, 0]
-        selectedNonces = [inputPubNonces !! 1, inputPubNonces !! 2, head inputPubNonces] -- [1, 2, 0]
+    let selectedKeys = [inputPubkeys !! 1, inputPubkeys !! 2, firstInputPubKey] -- [1, 2, 0]
+        selectedNonces = [inputPubNonces !! 1, inputPubNonces !! 2, firstInputPubNonce] -- [1, 2, 0]
         tweaks = createTweaks tweakIndices isXOnly
         aggNonce = unsafeRight $ aggNonces selectedNonces
     assertBool
@@ -112,6 +112,13 @@ makeErrorTestCase i (tweakIndices, isXOnly, expectedError, comment) =
           Left (TweakOutOfRange _) -> True
           _ -> False
       )
+ where
+  firstInputPubKey = case inputPubkeys of
+    pub : _ -> pub
+    [] -> error "Expected at least one input public key"
+  firstInputPubNonce = case inputPubNonces of
+    nonce : _ -> nonce
+    [] -> error "Expected at least one input public nonce"
 
 -- | Test vectors from [BIP-0327 `tweak_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/tweak_vectors.json).
 testTweak :: TestTree

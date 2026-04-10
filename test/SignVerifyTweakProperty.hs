@@ -24,7 +24,7 @@ propertySignVerifyTweak =
 
 mkTweakedContext :: SignerMaterial -> [Tweak] -> ByteString -> ([PubNonce], [Pub], SessionContext)
 mkTweakedContext signer tweaks msg =
-  let pubNonce = publicNonce signer.signerSecNonce
+  let pubNonce = unsafeRight $ publicNonce signer.signerSecNonce
       pubNonces = [pubNonce]
       pubkeys = [signer.signerPubKey]
       aggNonce = unsafeRight $ aggNonces pubNonces

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -17,6 +18,9 @@ module Crypto.Curve.Secp256k1.MuSig2.Internal (
   -- Key aggregation
   computeKeyAggCoef,
   getSecondKey,
+  -- SecNonce internals (not re-exported from public API)
+  SecNonce (..),
+  secNonceScalars,
   -- utils/misc
   isEvenPub,
   xBytes,
@@ -44,6 +48,22 @@ import Data.Maybe (fromMaybe)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Traversable ()
+import GHC.Generics (Generic)
+
+-- | Secret nonce (internal representation). See public API for documentation.
+data SecNonce = SecNonce
+  { secNonceK1Internal :: !Integer
+  -- ^ First secret scalar.
+  , secNonceK2Internal :: !Integer
+  -- ^ Second secret scalar.
+  , secNoncePubKeyInternal :: !Pub
+  -- ^ Public key this nonce is bound to.
+  }
+  deriving (Generic)
+
+-- | Returns the two secret scalars contained in a 'SecNonce'.
+secNonceScalars :: SecNonce -> (Integer, Integer)
+secNonceScalars secNonce = (secNonceK1Internal secNonce, secNonceK2Internal secNonce)
 
 {- | Aggregates a 'Traversable' of 'Pub'keys using the
 [Key Aggregation algorithm in BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
@@ -144,12 +164,12 @@ xorByteStrings = BS.packZipWith xor
 encodeLen :: ByteString -> ByteString
 encodeLen bs = BSL.toStrict . toLazyByteString . word64BE . fromIntegral $ BS.length bs
 
--- | Checks if a 'Pub'key is even.
-isEvenPub :: Pub -> Bool
+-- | Checks if a 'Pub'key is even. Returns 'Nothing' for invalid compressed point formats.
+isEvenPub :: Pub -> Maybe Bool
 isEvenPub pub = case BS.unpack (serialize_point pub) of
-  (0x02 : _) -> True -- even y-coordinate
-  (0x03 : _) -> False -- odd y-coordinate
-  _ -> error "musig2 (isEvenPub): invalid compressed point format"
+  (0x02 : _) -> Just True -- even y-coordinate
+  (0x03 : _) -> Just False -- odd y-coordinate
+  _ -> Nothing
 
 -- | Gets the X-coordinate from a 'Pub'lic key as 'ByteString'
 xBytes :: Pub -> ByteString

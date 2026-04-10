@@ -19,6 +19,24 @@ Pure [BIP0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
 [MuSig2](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
 (partial)signatures with tweak support on the elliptic curve secp256k1.
 
+== Security Considerations
+
+* __Nonce single-use:__ Each 'SecNonce' /must/ be used to 'sign' at most one
+  message. Reusing a nonce across two different messages enables algebraic
+  recovery of the signer's private key. This library does not enforce
+  single-use semantics at the type level; callers must ensure fresh nonces
+  per signing session.
+
+* __Non-constant-time arithmetic:__ This library uses Haskell's arbitrary-precision
+  'Integer' type for all scalar operations. Branching and comparison on secret
+  values (e.g., key negation during signing) is not constant-time. For
+  applications requiring side-channel resistance, consider a C FFI binding
+  such as @libsecp256k1-musig@.
+
+* __No secret zeroization:__ Secret key material ('SecKey', 'SecNonce') is not
+  zeroized after use due to Haskell's garbage-collected runtime. Secrets may
+  persist in memory until collected.
+
 == Usage
 
 A sample GHCi session:
@@ -54,8 +72,8 @@ A sample GHCi session:
 > let params2 = MuSig2.defaultSecNonceGenParams pub2
 > Right secnonce1 <- MuSig2.secNonceGen params1
 > Right secnonce2 <- MuSig2.secNonceGen params2
-> let pubnonce1 = MuSig2.publicNonce secnonce1
-> let pubnonce2 = MuSig2.publicNonce secnonce2
+> let Right pubnonce1 = MuSig2.publicNonce secnonce1
+> let Right pubnonce2 = MuSig2.publicNonce secnonce2
 > let pubnonces = [pubnonce1, pubnonce2]
 >
 > -- aggregate nonces and create session context
@@ -97,7 +115,6 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   -- nonces
   SecNonce,
   mkSecNonce,
-  secNonceScalars,
   SecNonceGenParams (..),
   defaultSecNonceGenParams,
   secNonceGen,
@@ -146,13 +163,14 @@ data MuSig2Error
   | AggregatedPublicKeyAtInfinity
   | TweakResultAtInfinity
   | SecretScalarZero String
-  | SecretScalarOutOfRange String Integer
+  | SecretScalarOutOfRange String
   | SecretKeyPublicKeyMismatch
-  | PartialSignatureOutOfRange Integer
+  | PartialSignatureOutOfRange
   | InvalidRandomBytesLength Int
   | PublicNonceGenerationFailed String
   | KeyDerivationFailed
   | ScalarMultiplicationFailed String
+  | InvalidPointFormat
   | ZeroNonceGenerated
   deriving (Eq, Show)
 
@@ -162,7 +180,7 @@ liftMaybe err = maybe (Left err) Right
 validateSecretScalar :: String -> Integer -> Either MuSig2Error Integer
 validateSecretScalar label scalar
   | scalar == 0 = Left (SecretScalarZero label)
-  | scalar < 0 || scalar >= curveOrder = Left (SecretScalarOutOfRange label scalar)
+  | scalar < 0 || scalar >= curveOrder = Left (SecretScalarOutOfRange label)
   | otherwise = Right scalar
 
 validateTweakValue :: Integer -> Either MuSig2Error Integer
@@ -190,16 +208,19 @@ aggPartials partials ctx =
     then Left EmptyPartialSignatureCollection
     else case traverse validatePartialSignature partialsSeq of
       Left err -> Left err
-      Right validPartials ->
+      Right validPartials -> do
+        nonce <- getSigningNonce ctx
+        signingHash <- getSigningHash ctx
         let
-          nonce = getSigningNonce ctx
-          e = bytesToInteger $ getSigningHash ctx
+          e = bytesToInteger signingHash
           keyCtx = cachedKeyAggCtx ctx
           aggPk = q keyCtx
           taccVal = maybe 0 getTweak $ tacc keyCtx
           gaccVal = gacc keyCtx
-          -- BIP 327: Let g = 1 if has_even_y(Q), otherwise let g = -1 mod n
-          g = if isEvenPub aggPk then 1 else curveOrder - 1
+        -- BIP 327: Let g = 1 if has_even_y(Q), otherwise let g = -1 mod n
+        evenAggPk <- liftMaybe InvalidPointFormat (isEvenPub aggPk)
+        let
+          g = if evenAggPk then 1 else curveOrder - 1
           -- Apply accumulated parity factor
           g' = modQ (g * gaccVal)
           sSum = modQ $ sum validPartials
@@ -207,12 +228,11 @@ aggPartials partials ctx =
           s = modQ (sSum + e * g' * taccVal)
           left = xBytes nonce
           right = integerToBytes32 s
-         in
-          Right (left <> right)
+        Right (left <> right)
  where
   partialsSeq = Seq.fromList (toList partials)
   validatePartialSignature partial
-    | partial < 0 || partial >= curveOrder = Left (PartialSignatureOutOfRange partial)
+    | partial < 0 || partial >= curveOrder = Left PartialSignatureOutOfRange
     | otherwise = Right partial
 
 {- | Compute a partial signature on a message.
@@ -232,14 +252,16 @@ sign ::
   Either MuSig2Error PartialSignature
 sign secnonce sk ctx =
   do
+    nonce <- getSigningNonce ctx
+    signingHash <- getSigningHash ctx
     let publicKeys = pks ctx
-        nonce = getSigningNonce ctx
-        e = bytesToInteger $ getSigningHash ctx
+        e = bytesToInteger signingHash
         keyCtx = cachedKeyAggCtx ctx
         aggPk = q keyCtx
-        oddAggPk = not $ isEvenPub aggPk
         gaccVal = gacc keyCtx
         SecNonce k1 k2 boundPk = secnonce
+    evenAggPk <- liftMaybe InvalidPointFormat (isEvenPub aggPk)
+    evenNonce <- liftMaybe InvalidPointFormat (isEvenPub nonce)
     _ <- validateSecretScalar "k1" k1
     _ <- validateSecretScalar "k2" k2
     d' <- validateSecretScalar "secret key" (unSecKey sk)
@@ -250,6 +272,7 @@ sign secnonce sk ctx =
         let
           -- `d` is negated if exactly one of the parity accumulator OR the aggregated pubkey has odd parity.
           -- gaccVal == 1 means no negation, gaccVal == n-1 means negation
+          oddAggPk = not evenAggPk
           parityFromGacc = gaccVal /= 1
           d = if parityFromGacc /= oddAggPk then curveOrder - d' else d'
           a = computeKeyAggCoef p publicKeys
@@ -259,9 +282,10 @@ sign secnonce sk ctx =
           --   k = (n-k1) + b(n-k2)
           --     = n - (k1 + b*k2)
           b = getSigningNonceCoeff ctx
-          k = if isEvenPub nonce then k1 + b * k2 else curveOrder - (k1 + b * k2)
+          k = if evenNonce then k1 + b * k2 else curveOrder - (k1 + b * k2)
           s = modQ (k + e * a * d)
-        verified <- partialSigVerifyInternal s (publicNonce secnonce) p ctx
+        pubNonce' <- publicNonce secnonce
+        verified <- partialSigVerifyInternal s pubNonce' p ctx
         if verified
           then Right s
           else Left (PublicNonceGenerationFailed "partial signature self-verification failed")
@@ -321,18 +345,22 @@ partialSigVerifyInternal ::
 partialSigVerifyInternal partial pubnonce pk ctx =
   do
     s <- validatePartialSignature partial
+    signingHash <- getSigningHash ctx
+    finalNonce <- getSigningNonce ctx
     let
       publicKeys = pks ctx
       keyCtx = cachedKeyAggCtx ctx
       aggPk = q keyCtx
-      oddAggPk = not $ isEvenPub aggPk
       gaccVal = gacc keyCtx
-      e = bytesToInteger $ getSigningHash ctx
+      e = bytesToInteger signingHash
       r1' = pubnonce.r1
       r2' = pubnonce.r2
       b = getSigningNonceCoeff ctx
-      finalNonce = getSigningNonce ctx
       a = computeKeyAggCoef pk publicKeys
+    evenAggPk <- liftMaybe InvalidPointFormat (isEvenPub aggPk)
+    evenFinalNonce <- liftMaybe InvalidPointFormat (isEvenPub finalNonce)
+    let
+      oddAggPk = not evenAggPk
       -- Calculate g factor: 1 if aggregate pubkey has even Y, n-1 if odd
       g = if oddAggPk then curveOrder - 1 else 1
       -- Apply parity accumulator: gacc is accumulated parity factor
@@ -343,12 +371,12 @@ partialSigVerifyInternal partial pubnonce pk ctx =
     let
       re' = add r1' r2b
       -- Negate individual nonce if final aggregate nonce has odd Y
-      re = if isEvenPub finalNonce then re' else neg re'
+      re = if evenFinalNonce then re' else neg re'
       sG' = re `add` pkMul
     Right (sG == sG')
  where
   validatePartialSignature s
-    | s < 0 || s >= curveOrder = Left (PartialSignatureOutOfRange s)
+    | s < 0 || s >= curveOrder = Left PartialSignatureOutOfRange
     | otherwise = Right s
 
 -- | Secret key.
@@ -465,16 +493,15 @@ mkSessionContext aggNonce pks tweaks msg
 {- | Gets the signing nonce as a 'Projective' following
 [BIP-0327 algorithm and recommendations](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#dealing-with-infinity-in-nonce-aggregation).
 -}
-getSigningNonce :: SessionContext -> Projective
-getSigningNonce ctx =
+getSigningNonce :: SessionContext -> Either MuSig2Error Projective
+getSigningNonce ctx = do
   let
     b = getSigningNonceCoeff ctx
     aggNonce = ctx.aggNonce
     aggNonce' = if aggNonce.r1 == _CURVE_ZERO then PubNonce _CURVE_G aggNonce.r2 else aggNonce
-    r2b = fromMaybe (error "musig2 (getSigningNonce): failed to compute r2 * b") $ mul aggNonce'.r2 (fromInteger b)
-    finalNonce = add aggNonce'.r1 r2b
-   in
-    if finalNonce == _CURVE_ZERO then _CURVE_G else finalNonce
+  r2b <- liftMaybe (ScalarMultiplicationFailed "r2 * b") $ mul aggNonce'.r2 (fromInteger b)
+  let finalNonce = add aggNonce'.r1 r2b
+  Right (if finalNonce == _CURVE_ZERO then _CURVE_G else finalNonce)
 
 {- | Gets the signing nonce coefficient following
 [BIP-0327 algorithm and recommendations](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#dealing-with-infinity-in-nonce-aggregation).
@@ -499,17 +526,16 @@ Note that the signing challenge hash is the naming convention from the
 [MuSig2 paper, page 6](https://eprint.iacr.org/2020/1261).
 In the BIP-0327 it is referred as @e@.
 -}
-getSigningHash :: SessionContext -> ByteString
-getSigningHash ctx =
+getSigningHash :: SessionContext -> Either MuSig2Error ByteString
+getSigningHash ctx = do
+  nonce <- getSigningNonce ctx
   let
     aggPubKey = q (cachedKeyAggCtx ctx)
     qBytes = xBytes aggPubKey
     msg = ctx.msg
-    nonce = getSigningNonce ctx
     r = xBytes nonce
     preimage = r <> qBytes <> msg
-   in
-    hashTagModQ "BIP0340/challenge" preimage
+  Right (hashTagModQ "BIP0340/challenge" preimage)
 
 -- | Tweak that can be added to an aggregated 'Pub'key.
 data Tweak
@@ -547,7 +573,8 @@ applyTweak ctx newTweak = do
         then Left TweakResultAtInfinity
         else Right ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak), gacc = newGacc}
     XOnlyTweak _ -> do
-      let g = if isEvenPub pubkey then 1 else curveOrder - 1
+      evenPubkey <- liftMaybe InvalidPointFormat (isEvenPub pubkey)
+      let g = if evenPubkey then 1 else curveOrder - 1
       pubkeyMul <- liftMaybe (ScalarMultiplicationFailed "pubkey * g") $ mul pubkey (fromInteger g)
       tG <- liftMaybe (ScalarMultiplicationFailed "t * G") $ mul _CURVE_G (fromInteger t)
       let tweakedPk = add pubkeyMul tG
@@ -582,28 +609,25 @@ aggregatedPubkey = q
 {- | Secret nonce.
 
 The secret nonce provides randomness, blinding a signer's private key when
-signing. It is imperative that the same 'SecNonce' is not used to sign more
-than one message with the same key, as this would allow an observer to
-compute the private key used to create both signatures.
+signing.
+
+== SECURITY: Single-Use Requirement
+
+A 'SecNonce' /must/ be used to 'sign' at most one message. Reusing the same
+'SecNonce' across two different messages or session contexts allows an
+adversary to algebraically recover the signer's private key.
+
+This library does not enforce single-use semantics at the type level. It is
+the caller's responsibility to ensure that each 'SecNonce' is consumed
+exactly once and then discarded. Generate a fresh nonce (via 'secNonceGen')
+for every signing session.
 
 If you want to follow
 [BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
 suggestions, then use 'secNonceGen' otherwise use 'mkSecNonce'.
+
+@since 0.2.0
 -}
-data SecNonce = SecNonce
-  { secNonceK1Internal :: !Integer
-  -- ^ First secret scalar.
-  , secNonceK2Internal :: !Integer
-  -- ^ Second secret scalar.
-  , secNoncePubKeyInternal :: !Pub
-  -- ^ Public key this nonce is bound to.
-  }
-  deriving (Eq, Ord, Generic)
-
--- | Returns the two secret scalars contained in a 'SecNonce'.
-secNonceScalars :: SecNonce -> (Integer, Integer)
-secNonceScalars secNonce = (secNonceK1Internal secNonce, secNonceK2Internal secNonce)
-
 mkSecNonce ::
   -- | Public key this nonce is bound to.
   Pub ->
@@ -745,12 +769,12 @@ data PubNonce = PubNonce
   deriving (Eq, Ord, Show)
 
 -- | Generates a 'PubNonce' from a 'SecNonce'.
-publicNonce :: SecNonce -> PubNonce
-publicNonce secNonce =
+publicNonce :: SecNonce -> Either MuSig2Error PubNonce
+publicNonce secNonce = do
   let (k1, k2) = secNonceScalars secNonce
-      r1' = fromMaybe (error "musig2 (publicNonce): failed to compute r1") $ mul _CURVE_G (fromInteger k1)
-      r2' = fromMaybe (error "musig2 (publicNonce): failed to compute r2") $ mul _CURVE_G (fromInteger k2)
-   in PubNonce r1' r2'
+  r1' <- liftMaybe (ScalarMultiplicationFailed "k1 * G") $ mul _CURVE_G (fromInteger k1)
+  r2' <- liftMaybe (ScalarMultiplicationFailed "k2 * G") $ mul _CURVE_G (fromInteger k2)
+  Right (PubNonce r1' r2')
 
 -- | 'Data.Semigroup' implementation of 'PubNonce' for algebraic sound combination of public nonces.
 instance Semigroup PubNonce where

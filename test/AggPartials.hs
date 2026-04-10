@@ -157,7 +157,7 @@ makeErrorTestCase i SigAggTestVector{..} =
         selectedPsigs = map (psigs !!) psigIndices
         ctx = unsafeRight $ mkSessionContext aggNonce selectedKeys selectedTweaks msg
     assertBool "Expected error case" errorCase
-    aggPartials selectedPsigs ctx @?= Left (PartialSignatureOutOfRange (psigs !! 8))
+    aggPartials selectedPsigs ctx @?= Left PartialSignatureOutOfRange
 
 -- | Main test group for signature aggregation.
 testAggPartials :: TestTree

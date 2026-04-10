@@ -23,7 +23,7 @@ propertyAggPartials =
 
 mkTwoSignerContext :: SignerMaterial -> SignerMaterial -> ByteString -> ([PubNonce], [Pub], SessionContext)
 mkTwoSignerContext signer1 signer2 msg =
-  let pubNonces = [publicNonce signer1.signerSecNonce, publicNonce signer2.signerSecNonce]
+  let pubNonces = [unsafeRight $ publicNonce signer1.signerSecNonce, unsafeRight $ publicNonce signer2.signerSecNonce]
       pubkeys = [signer1.signerPubKey, signer2.signerPubKey]
       aggNonce = unsafeRight $ aggNonces pubNonces
       ctx = unsafeRight $ mkSessionContext aggNonce pubkeys [] msg
@@ -62,7 +62,7 @@ prop_partialsVerifyBeforeAgg signer1 signer2 msg =
 -- | Property: For a single signer, aggregation should work correctly
 prop_singleSignerAgg :: SignerMaterial -> ByteString -> Property
 prop_singleSignerAgg signer msg =
-  let pubNonce = publicNonce signer.signerSecNonce
+  let pubNonce = unsafeRight $ publicNonce signer.signerSecNonce
       pubNonces = [pubNonce]
       pubkeys = [signer.signerPubKey]
       aggNonce = unsafeRight $ aggNonces pubNonces

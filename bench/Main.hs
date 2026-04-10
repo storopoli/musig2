@@ -13,7 +13,7 @@ import Crypto.Curve.Secp256k1.MuSig2 (
   KeyAggContext,
   PubNonce (..),
   SecKey (..),
-  SecNonce (..),
+  SecNonce,
   SecNonceGenParams (..),
   SessionContext (..),
   Tweak (..),
@@ -21,6 +21,10 @@ import Crypto.Curve.Secp256k1.MuSig2 (
 import qualified Crypto.Curve.Secp256k1.MuSig2 as M
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
+
+-- | Unwrap a Right value, crashing on Left (bench setup only).
+unsafeRight :: (Show e) => Either e a -> a
+unsafeRight = either (error . show) id
 
 -- NFData instances for benchmarking
 instance NFData S.Projective
@@ -32,7 +36,7 @@ instance NFData SecKey where
   rnf (SecKey i) = rnf i
 
 instance NFData SecNonce where
-  rnf (SecNonce k1 k2) = rnf k1 `seq` rnf k2
+  rnf sn = sn `seq` ()
 
 instance NFData PubNonce where
   rnf (PubNonce r1 r2) = rnf r1 `seq` rnf r2
@@ -96,8 +100,7 @@ nonceGen :: Benchmark
 nonceGen = env setupNonce $ \ ~(params, rand) ->
   bgroup
     "nonce_generation"
-    [ bench "mkSecNonce" $ nfIO M.mkSecNonce
-    , bench "secNonceGen (minimal params)" $ nfIO (M.secNonceGen params)
+    [ bench "secNonceGen (minimal params)" $ nfIO (M.secNonceGen params)
     , bench "secNonceGenWithRand" $ nf (M.secNonceGenWithRand rand) params
     , bench "publicNonce" $ nf M.publicNonce secNonce1
     ]
@@ -127,9 +130,7 @@ sessionOps = env setupSession $ \ ~(aggNonce, pks, tweaks) ->
     ]
  where
   setupSession = do
-    let !aggNonce = case M.aggNonces [pubNonce1, pubNonce2] of
-          Nothing -> error "failed to aggregate nonces"
-          Just n -> n
+    let !aggNonce = unsafeRight $ M.aggNonces [pubNonce1, pubNonce2]
         !pks = [p, q]
         !tweaks = [plainTweak, xonlyTweak]
     pure (aggNonce, pks, tweaks)
@@ -143,11 +144,9 @@ signing = env setupSigning $ \ ~(ctx, secNonce, sk) ->
     ]
  where
   setupSigning = do
-    let !aggNonce = case M.aggNonces [pubNonce1, pubNonce2] of
-          Nothing -> error "failed to aggregate nonces"
-          Just n -> n
-        !ctx = M.mkSessionContext aggNonce [p, q] [] sMsg
-        !secNonce = SecNonce sk1 sk2
+    let !aggNonce = unsafeRight $ M.aggNonces [pubNonce1, pubNonce2]
+        !ctx = unsafeRight $ M.mkSessionContext aggNonce [p, q] [] sMsg
+        !secNonce = secNonce1
         !sk = SecKey ssk
     pure (ctx, secNonce, sk)
 
@@ -161,13 +160,11 @@ verification = env setupVerification $ \ ~(partial, nonces, pks, ctx) ->
     ]
  where
   setupVerification = do
-    let !aggNonce = case M.aggNonces [pubNonce1, pubNonce2] of
-          Nothing -> error "failed to aggregate nonces"
-          Just n -> n
-        !ctx = M.mkSessionContext aggNonce [p, q] [] sMsg
-        !secNonce = SecNonce sk1 sk2
+    let !aggNonce = unsafeRight $ M.aggNonces [pubNonce1, pubNonce2]
+        !ctx = unsafeRight $ M.mkSessionContext aggNonce [p, q] [] sMsg
+        !secNonce = secNonce1
         !sk = SecKey ssk
-        !partial = M.sign secNonce sk ctx
+        !partial = unsafeRight $ M.sign secNonce sk ctx
         !nonces = [pubNonce1, pubNonce2]
         !pks = [p, q]
     pure (partial, nonces, pks, ctx)
@@ -238,7 +235,7 @@ sMsg =
 
 -- Contexts and nonces for testing
 keyCtx2 :: KeyAggContext
-keyCtx2 = M.mkKeyAggContext [p, q] Nothing
+keyCtx2 = unsafeRight $ M.mkKeyAggContext [p, q] Nothing
 
 plainTweak :: Tweak
 plainTweak = PlainTweak 0x1234567890ABCDEF
@@ -247,31 +244,31 @@ xonlyTweak :: Tweak
 xonlyTweak = XOnlyTweak 0xFEDCBA0987654321
 
 secNonce1 :: SecNonce
-secNonce1 = SecNonce sk1 sk2
+secNonce1 = unsafeRight $ M.mkSecNonce p sk1 sk2
 
 pubNonce1 :: PubNonce
-pubNonce1 = M.publicNonce secNonce1
+pubNonce1 = unsafeRight $ M.publicNonce secNonce1
 
 secNonce2 :: SecNonce
-secNonce2 = SecNonce (sk1 + 1) (sk2 + 1)
+secNonce2 = unsafeRight $ M.mkSecNonce p (sk1 + 1) (sk2 + 1)
 
 pubNonce2 :: PubNonce
-pubNonce2 = M.publicNonce secNonce2
+pubNonce2 = unsafeRight $ M.publicNonce secNonce2
 
 secNonce3 :: SecNonce
-secNonce3 = SecNonce (sk1 + 2) (sk2 + 2)
+secNonce3 = unsafeRight $ M.mkSecNonce p (sk1 + 2) (sk2 + 2)
 
 pubNonce3 :: PubNonce
-pubNonce3 = M.publicNonce secNonce3
+pubNonce3 = unsafeRight $ M.publicNonce secNonce3
 
 secNonce4 :: SecNonce
-secNonce4 = SecNonce (sk1 + 3) (sk2 + 3)
+secNonce4 = unsafeRight $ M.mkSecNonce p (sk1 + 3) (sk2 + 3)
 
 pubNonce4 :: PubNonce
-pubNonce4 = M.publicNonce secNonce4
+pubNonce4 = unsafeRight $ M.publicNonce secNonce4
 
 secNonce5 :: SecNonce
-secNonce5 = SecNonce (sk1 + 4) (sk2 + 4)
+secNonce5 = unsafeRight $ M.mkSecNonce p (sk1 + 4) (sk2 + 4)
 
 pubNonce5 :: PubNonce
-pubNonce5 = M.publicNonce secNonce5
+pubNonce5 = unsafeRight $ M.publicNonce secNonce5

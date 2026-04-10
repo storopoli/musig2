@@ -39,10 +39,13 @@ tweaks =
   , 0x252E4BD67410A76CDF933D30EAA1608214037F1B105A013ECCD3C5C184A6110B -- tweak that causes infinity
   ]
 
+invalidTweakOutOfRange :: Integer
+invalidTweakOutOfRange = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
 -- | Error test cases: (key indices, tweak index, is_xonly, expected error).
 errorTestVectors :: [([Int], Int, Bool, MuSig2Error)]
 errorTestVectors =
-  [ ([0, 1], 0, True, TweakOutOfRange (head tweaks))
+  [ ([0, 1], 0, True, TweakOutOfRange invalidTweakOutOfRange)
   , ([6], 1, False, TweakResultAtInfinity)
   ]
 

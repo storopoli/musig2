@@ -6,8 +6,8 @@
 module Util (parsePoint, parseScalar, parsePubNonce, extractXOnly, decodeHex, Rand32 (..), Scalar (..), SignerMaterial (..), unsafeRight, unsafeMkSecNonce) where
 
 import Crypto.Curve.Secp256k1 (Projective, Pub, derive_pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_ZERO)
-import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce, SecNonceGenParams (..), Tweak (..), mkSecNonce, secNonceScalars)
-import Crypto.Curve.Secp256k1.MuSig2.Internal (curveOrder)
+import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce, SecNonceGenParams (..), Tweak (..), mkSecNonce)
+import Crypto.Curve.Secp256k1.MuSig2.Internal (curveOrder, secNonceScalars)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16

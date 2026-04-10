@@ -5,7 +5,8 @@
 module NonceGen (testNonceGen) where
 
 import Crypto.Curve.Secp256k1 (Pub)
-import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonceGenParams (..), publicNonce, secNonceGenWithRand, secNonceScalars)
+import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonceGenParams (..), publicNonce, secNonceGenWithRand)
+import Crypto.Curve.Secp256k1.MuSig2.Internal (secNonceScalars)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Test.Tasty
@@ -92,7 +93,7 @@ makeNonceGenTestCase i NonceGenTestVector{..} =
             , _extraIn = extra_in
             }
     let sec = unsafeRight $ secNonceGenWithRand rand_ params
-    let pub = publicNonce sec
+    let pub = unsafeRight $ publicNonce sec
     let (k1, k2) = secNonceScalars sec
     assertEqual "k1 mismatch" expected_k1 k1
     assertEqual "k2 mismatch" expected_k2 k2

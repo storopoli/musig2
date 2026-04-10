@@ -59,7 +59,7 @@ invalidTestVectors =
 
 errorTestVectors :: [(ByteString, [Int], [Int], Int, Int, MuSig2Error)]
 errorTestVectors =
-  [ (decodeHex "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", [0, 1, 2], [0, 1, 2], 0, 0, PartialSignatureOutOfRange 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141)
+  [ (decodeHex "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", [0, 1, 2], [0, 1, 2], 0, 0, PartialSignatureOutOfRange)
   ]
 
 invalidSecNoncePub :: Pub
@@ -95,22 +95,29 @@ makeErrorTestCase i (sigBytes, keyIndices, nonceIndices, msgIndex, signerIndex, 
 testInvalidSecNonce :: TestTree
 testInvalidSecNonce =
   testCase "mkSecNonce rejects zero scalars" $
-    mkSecNonce invalidSecNoncePub 1 0 @?= Left (SecretScalarZero "k2")
+    case mkSecNonce invalidSecNoncePub 1 0 of
+      Left (SecretScalarZero "k2") -> pure ()
+      Left err -> assertFailure $ "Expected SecretScalarZero \"k2\", got: Left " ++ show err
+      Right _ -> assertFailure "Expected Left, got Right"
 
 testContextRejectsInfinityPubkey :: TestTree
 testContextRejectsInfinityPubkey =
   testCase "mkSessionContext rejects infinity public keys" $ do
-    let aggNonce = unsafeRight $ aggNonces [head inputPubNonces]
+    let aggNonce = unsafeRight $ aggNonces [firstPubNonce]
     case mkSessionContext aggNonce [_CURVE_ZERO] [] "msg" of
       Left PublicKeyAtInfinity -> pure ()
       _ -> assertFailure "Expected Left PublicKeyAtInfinity"
+ where
+  firstPubNonce = case inputPubNonces of
+    nonce : _ -> nonce
+    [] -> error "Expected at least one input public nonce"
 
 testSignerKeyMismatch :: TestTree
 testSignerKeyMismatch =
   testCase "sign rejects nonce/key mismatches" $ do
     let signerPub = fromMaybe (error "Failed to derive signer pubkey") $ derive_pub 2
         secNonce = unsafeMkSecNonce signerPub 5 7
-        aggNonce = unsafeRight $ aggNonces [publicNonce secNonce]
+        aggNonce = unsafeRight $ aggNonces [unsafeRight $ publicNonce secNonce]
         ctx = unsafeRight $ mkSessionContext aggNonce [signerPub] [] "msg"
     sign secNonce (SecKey 3) ctx @?= Left SecretKeyPublicKeyMismatch
 
