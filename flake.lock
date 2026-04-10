@@ -172,6 +172,19 @@
         "url": "https://hackage.haskell.org/package/ppad-sha256-0.3.0/ppad-sha256-0.3.0.tar.gz"
       }
     },
+    "ppad-sha512-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1000000000,
+        "narHash": "sha256-CedsPuj0bkJIkGA8Ocq7NbpX+mXizAwzpKI2n3NGQ8Q=",
+        "type": "tarball",
+        "url": "https://hackage.haskell.org/package/ppad-sha512-0.2.2/ppad-sha512-0.2.2.tar.gz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://hackage.haskell.org/package/ppad-sha512-0.2.2/ppad-sha512-0.2.2.tar.gz"
+      }
+    },
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
@@ -181,7 +194,8 @@
         "ppad-fixed-src": "ppad-fixed-src",
         "ppad-hmac-drbg-src": "ppad-hmac-drbg-src",
         "ppad-secp256k1-src": "ppad-secp256k1-src",
-        "ppad-sha256-src": "ppad-sha256-src"
+        "ppad-sha256-src": "ppad-sha256-src",
+        "ppad-sha512-src": "ppad-sha512-src"
       }
     },
     "systems": {

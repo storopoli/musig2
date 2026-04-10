@@ -6,9 +6,9 @@
     flake-utils.url = "github:numtide/flake-utils";
     git-hooks.url = "github:cachix/git-hooks.nix";
 
-    # TODO: remove these once ppad-secp256k1 0.5.0+ is released in a stable Nix release, probably 26.05.
+    # Keep the ppad stack pinned until nixpkgs carries the current releases.
     ppad-secp256k1-src = {
-      url = "https://hackage.haskell.org/package/ppad-secp256k1-0.5.3/ppad-secp256k1-0.5.3.tar.gz";
+      url = "https://hackage.haskell.org/package/ppad-secp256k1-0.5.4/ppad-secp256k1-0.5.4.tar.gz";
       flake = false;
     };
     ppad-fixed-src = {
@@ -20,11 +20,15 @@
       flake = false;
     };
     ppad-sha256-src = {
-      url = "https://hackage.haskell.org/package/ppad-sha256-0.3.0/ppad-sha256-0.3.0.tar.gz";
+      url = "https://hackage.haskell.org/package/ppad-sha256-0.3.2/ppad-sha256-0.3.2.tar.gz";
+      flake = false;
+    };
+    ppad-sha512-src = {
+      url = "https://hackage.haskell.org/package/ppad-sha512-0.2.2/ppad-sha512-0.2.2.tar.gz";
       flake = false;
     };
     ppad-hmac-drbg-src = {
-      url = "https://hackage.haskell.org/package/ppad-hmac-drbg-0.2.1/ppad-hmac-drbg-0.2.1.tar.gz";
+      url = "https://hackage.haskell.org/package/ppad-hmac-drbg-0.3.1/ppad-hmac-drbg-0.3.1.tar.gz";
       flake = false;
     };
   };
@@ -39,6 +43,7 @@
       ppad-fixed-src,
       ppad-base16-src,
       ppad-sha256-src,
+      ppad-sha512-src,
       ppad-hmac-drbg-src,
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -56,7 +61,7 @@
           new: old: {
             ${lib} = new.callCabal2nix lib ./. { };
             # tests are broken somehow in these deps
-            ppad-sha512 = hlib.dontCheck old.ppad-sha512;
+            ppad-sha512 = hlib.dontCheck (new.callCabal2nix "ppad-sha512" ppad-sha512-src { });
             ppad-sha256 = hlib.dontCheck (new.callCabal2nix "ppad-sha256" ppad-sha256-src { });
             ppad-hmac-drbg = hlib.dontCheck (new.callCabal2nix "ppad-hmac-drbg" ppad-hmac-drbg-src { });
             ppad-fixed = hlib.dontCheck (new.callCabal2nix "ppad-fixed" ppad-fixed-src { });
