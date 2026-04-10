@@ -1,6 +1,6 @@
 cabal-version:   3.0
 name:            musig2
-version:         0.1.4
+version:         0.2.0
 synopsis:        MuSig2 library
 license:         MIT
 license-file:    LICENSE
