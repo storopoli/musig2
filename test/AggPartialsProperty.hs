@@ -1,15 +1,15 @@
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module AggPartialsProperty (propertyAggPartials) where
 
-import Crypto.Curve.Secp256k1 (derive_pub)
-import Crypto.Curve.Secp256k1.MuSig2 (SecKey (..), SecNonce (..), aggNonces, aggPartials, mkSessionContext, partialSigVerify, publicNonce, sign)
+import Crypto.Curve.Secp256k1 (Pub)
+import Crypto.Curve.Secp256k1.MuSig2 (PubNonce, SessionContext, aggNonces, aggPartials, mkSessionContext, partialSigVerify, publicNonce, sign)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Maybe (fromJust, fromMaybe)
 import Test.Tasty
 import Test.Tasty.QuickCheck as QC
-import Util ()
+import Util (SignerMaterial (..), unsafeRight)
 
 propertyAggPartials :: TestTree
 propertyAggPartials =
@@ -21,61 +21,53 @@ propertyAggPartials =
     , testProperty "Aggregation with single signer equals partial sig" prop_singleSignerAgg
     ]
 
+mkTwoSignerContext :: SignerMaterial -> SignerMaterial -> ByteString -> ([PubNonce], [Pub], SessionContext)
+mkTwoSignerContext signer1 signer2 msg =
+  let pubNonces = [publicNonce signer1.signerSecNonce, publicNonce signer2.signerSecNonce]
+      pubkeys = [signer1.signerPubKey, signer2.signerPubKey]
+      aggNonce = unsafeRight $ aggNonces pubNonces
+      ctx = unsafeRight $ mkSessionContext aggNonce pubkeys [] msg
+   in (pubNonces, pubkeys, ctx)
+
 -- | Property: Aggregating valid partial signatures produces a consistent result
-prop_aggValidPartials :: SecNonce -> SecKey -> SecNonce -> SecKey -> ByteString -> Property
-prop_aggValidPartials secNonce1 secKey1 secNonce2 secKey2 msg =
-  let pubkey1 = fromMaybe (error "Failed to derive pubkey1") $ derive_pub (fromInteger (case secKey1 of SecKey sk -> sk))
-      pubkey2 = fromMaybe (error "Failed to derive pubkey2") $ derive_pub (fromInteger (case secKey2 of SecKey sk -> sk))
-      pubkeys = [pubkey1, pubkey2]
-      pubNonces = [publicNonce secNonce1, publicNonce secNonce2]
-      aggNonce = fromJust $ aggNonces pubNonces
-      ctx = mkSessionContext aggNonce pubkeys [] msg
-      partialSig1 = sign secNonce1 secKey1 ctx
-      partialSig2 = sign secNonce2 secKey2 ctx
-      aggregated = aggPartials [partialSig1, partialSig2] ctx
-   in BS.length aggregated === 64 -- Schnorr signature is 64 bytes
+prop_aggValidPartials :: SignerMaterial -> SignerMaterial -> ByteString -> Property
+prop_aggValidPartials signer1 signer2 msg =
+  let (_, _, ctx) = mkTwoSignerContext signer1 signer2 msg
+      partialSig1 = unsafeRight $ sign signer1.signerSecNonce signer1.signerSecKey ctx
+      partialSig2 = unsafeRight $ sign signer2.signerSecNonce signer2.signerSecKey ctx
+      aggregated = unsafeRight $ aggPartials [partialSig1, partialSig2] ctx
+   in BS.length aggregated === 64
 
 -- | Property: Aggregation is deterministic - same inputs produce same output
-prop_aggDeterministic :: SecNonce -> SecKey -> SecNonce -> SecKey -> ByteString -> Property
-prop_aggDeterministic secNonce1 secKey1 secNonce2 secKey2 msg =
-  let pubkey1 = fromMaybe (error "Failed to derive pubkey1") $ derive_pub (fromInteger (case secKey1 of SecKey sk -> sk))
-      pubkey2 = fromMaybe (error "Failed to derive pubkey2") $ derive_pub (fromInteger (case secKey2 of SecKey sk -> sk))
-      pubkeys = [pubkey1, pubkey2]
-      pubNonces = [publicNonce secNonce1, publicNonce secNonce2]
-      aggNonce = fromJust $ aggNonces pubNonces
-      ctx = mkSessionContext aggNonce pubkeys [] msg
-      partialSig1 = sign secNonce1 secKey1 ctx
-      partialSig2 = sign secNonce2 secKey2 ctx
+prop_aggDeterministic :: SignerMaterial -> SignerMaterial -> ByteString -> Property
+prop_aggDeterministic signer1 signer2 msg =
+  let (_, _, ctx) = mkTwoSignerContext signer1 signer2 msg
+      partialSig1 = unsafeRight $ sign signer1.signerSecNonce signer1.signerSecKey ctx
+      partialSig2 = unsafeRight $ sign signer2.signerSecNonce signer2.signerSecKey ctx
       partialSigs = [partialSig1, partialSig2]
-      aggregated1 = aggPartials partialSigs ctx
-      aggregated2 = aggPartials partialSigs ctx
+      aggregated1 = unsafeRight $ aggPartials partialSigs ctx
+      aggregated2 = unsafeRight $ aggPartials partialSigs ctx
    in aggregated1 === aggregated2
 
 -- | Property: All partial signatures should verify individually before aggregation
-prop_partialsVerifyBeforeAgg :: SecNonce -> SecKey -> SecNonce -> SecKey -> ByteString -> Property
-prop_partialsVerifyBeforeAgg secNonce1 secKey1 secNonce2 secKey2 msg =
-  let pubkey1 = fromMaybe (error "Failed to derive pubkey1") $ derive_pub (fromInteger (case secKey1 of SecKey sk -> sk))
-      pubkey2 = fromMaybe (error "Failed to derive pubkey2") $ derive_pub (fromInteger (case secKey2 of SecKey sk -> sk))
-      pubkeys = [pubkey1, pubkey2]
-      pubNonces = [publicNonce secNonce1, publicNonce secNonce2]
-      aggNonce = fromJust $ aggNonces pubNonces
-      ctx = mkSessionContext aggNonce pubkeys [] msg
-      partialSig1 = sign secNonce1 secKey1 ctx
-      partialSig2 = sign secNonce2 secKey2 ctx
+prop_partialsVerifyBeforeAgg :: SignerMaterial -> SignerMaterial -> ByteString -> Property
+prop_partialsVerifyBeforeAgg signer1 signer2 msg =
+  let (pubNonces, pubkeys, ctx) = mkTwoSignerContext signer1 signer2 msg
+      partialSig1 = unsafeRight $ sign signer1.signerSecNonce signer1.signerSecKey ctx
+      partialSig2 = unsafeRight $ sign signer2.signerSecNonce signer2.signerSecKey ctx
       verify1 = partialSigVerify partialSig1 pubNonces pubkeys [] msg 0
       verify2 = partialSigVerify partialSig2 pubNonces pubkeys [] msg 1
-   in verify1 === True .&&. verify2 === True
+   in verify1 === Right True .&&. verify2 === Right True
 
 -- | Property: For a single signer, aggregation should work correctly
-prop_singleSignerAgg :: SecNonce -> SecKey -> ByteString -> Property
-prop_singleSignerAgg secNonce secKey@(SecKey sk) msg =
-  let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub (fromInteger sk)
-      pubNonce = publicNonce secNonce
+prop_singleSignerAgg :: SignerMaterial -> ByteString -> Property
+prop_singleSignerAgg signer msg =
+  let pubNonce = publicNonce signer.signerSecNonce
       pubNonces = [pubNonce]
-      pubkeys = [pubkey]
-      aggNonce = fromJust $ aggNonces pubNonces
-      ctx = mkSessionContext aggNonce pubkeys [] msg
-      partialSig = sign secNonce secKey ctx
-      aggregated = aggPartials [partialSig] ctx
+      pubkeys = [signer.signerPubKey]
+      aggNonce = unsafeRight $ aggNonces pubNonces
+      ctx = unsafeRight $ mkSessionContext aggNonce pubkeys [] msg
+      partialSig = unsafeRight $ sign signer.signerSecNonce signer.signerSecKey ctx
+      aggregated = unsafeRight $ aggPartials [partialSig] ctx
       verifyResult = partialSigVerify partialSig pubNonces pubkeys [] msg 0
-   in verifyResult === True .&&. BS.length aggregated === 64
+   in verifyResult === Right True .&&. BS.length aggregated === 64

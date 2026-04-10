@@ -9,7 +9,7 @@ import Data.ByteString (ByteString)
 import Data.Maybe (fromJust)
 import Test.Tasty
 import Test.Tasty.HUnit
-import Util (decodeHex, extractXOnly, parsePoint)
+import Util (decodeHex, extractXOnly, parsePoint, unsafeRight)
 
 -- | Computes taproot tweak from pubkey and merkle root.
 computeTaprootTweak :: Pub -> ByteString -> Integer
@@ -32,23 +32,23 @@ testPubkeys =
 testTweakSequence :: TestTree
 testTweakSequence =
   testCase "Tweak sequence" $ do
-    let keyAggCtx1 = mkKeyAggContext testPubkeys Nothing
+    let keyAggCtx1 = unsafeRight $ mkKeyAggContext testPubkeys Nothing
 
     -- Apply first X-only tweak
     let tweak1 = XOnlyTweak 0xE8F791FF9225A2AF0102AFFF4A9A723D9612A682A25EBE79802B263CDFCD83BB
-        keyAggCtx2 = applyTweak keyAggCtx1 tweak1
+        keyAggCtx2 = unsafeRight $ applyTweak keyAggCtx1 tweak1
 
     -- Apply second X-only tweak
     let tweak2 = XOnlyTweak 0xAE2EA797CC0FE72AC5B97B97F3C6957D7E4199A167A58EB08BCAFFDA70AC0455
-        keyAggCtx3 = applyTweak keyAggCtx2 tweak2
+        keyAggCtx3 = unsafeRight $ applyTweak keyAggCtx2 tweak2
 
     -- Apply third plain tweak
     let tweak3 = PlainTweak 0xF52ECBC565B3D8BEA2DFD5B75A4F457E54369809322E4120831626F290FA87E0
-        keyAggCtx4 = applyTweak keyAggCtx3 tweak3
+        keyAggCtx4 = unsafeRight $ applyTweak keyAggCtx3 tweak3
 
     -- Apply fourth plain tweak
     let tweak4 = PlainTweak 0x1969AD73CC177FA0B4FCED6DF1F7BF9907E665FDE9BA196A74FED0A3CF5AEF9D
-        finalKeyAggCtx = applyTweak keyAggCtx4 tweak4
+        finalKeyAggCtx = unsafeRight $ applyTweak keyAggCtx4 tweak4
         finalAggPk = aggregatedPubkey finalKeyAggCtx
         expected = fromJust $ parse_point $ decodeHex "0269434B39A026A4AAC9E6C1AEBDD3993FFA581C8F7F21B6FAAE15608057F5CE85"
 
@@ -58,13 +58,13 @@ testTweakSequence =
 testTaprootTweak :: TestTree
 testTaprootTweak =
   testCase "Taproot tweak with merkle root" $ do
-    let keyAggCtx = mkKeyAggContext testPubkeys Nothing
+    let keyAggCtx = unsafeRight $ mkKeyAggContext testPubkeys Nothing
         originalPk = aggregatedPubkey keyAggCtx
         merkleRootBytes = decodeHex "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         -- Compute proper taproot tweak hash
         taprootTweakValue = computeTaprootTweak originalPk merkleRootBytes
         taprootTweak = XOnlyTweak taprootTweakValue
-        tweakedCtx = applyTweak keyAggCtx taprootTweak
+        tweakedCtx = unsafeRight $ applyTweak keyAggCtx taprootTweak
         tweakedPk = aggregatedPubkey tweakedCtx
         expected = fromJust $ parse_point $ decodeHex "024650cca5e389f62e960f66ca0400927a7727fc6e84b9c38a1fd9a80271377ceb"
 

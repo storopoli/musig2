@@ -4,10 +4,9 @@ module AggNonces (testAggNonces) where
 
 import Crypto.Curve.Secp256k1 (_CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), aggNonces)
-import Data.Maybe (fromJust)
 import Test.Tasty
 import Test.Tasty.HUnit
-import Util (parsePoint, parsePubNonce)
+import Util (parsePoint, parsePubNonce, unsafeRight)
 
 -- | Input 'PubNonce's from BIP-0327 test vectors
 inputPubNonces :: [PubNonce]
@@ -32,7 +31,7 @@ testVectors =
 makeTestCase :: Int -> ([Int], PubNonce) -> TestTree
 makeTestCase i (indices, expected) =
   testCase ("BIP-0327 test vector " <> show (i + 1)) $
-    fromJust aggNonce @=? expected
+    unsafeRight aggNonce @=? expected
  where
   selectedNonces = map (inputPubNonces !!) indices
   aggNonce = aggNonces selectedNonces

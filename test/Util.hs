@@ -3,10 +3,10 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Util (parsePoint, parseScalar, parsePubNonce, extractXOnly, decodeHex, Rand32 (..), Scalar (..)) where
+module Util (parsePoint, parseScalar, parsePubNonce, extractXOnly, decodeHex, Rand32 (..), Scalar (..), SignerMaterial (..), unsafeRight, unsafeMkSecNonce) where
 
-import Crypto.Curve.Secp256k1 (Projective, Pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_ZERO)
-import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce (..), SecNonceGenParams (..), Tweak (..))
+import Crypto.Curve.Secp256k1 (Projective, Pub, derive_pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_ZERO)
+import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce, SecNonceGenParams (..), Tweak (..), mkSecNonce, secNonceScalars)
 import Crypto.Curve.Secp256k1.MuSig2.Internal (curveOrder)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -62,6 +62,11 @@ arbitraryBS = do
   len <- choose (0, 1024) :: Gen Int -- Limit size to avoid excessive memory use
   BS.pack <$> vectorOf len arbitrary
 
+genNonZeroPub :: Gen Pub
+genNonZeroPub = do
+  scalar <- choose (1, curveOrder - 1)
+  pure $ fromMaybe (error "Failed to derive non-zero public key") $ derive_pub (fromInteger scalar)
+
 -- | 'Arbitrary' instance for 'ByteString'.
 instance Arbitrary ByteString where
   arbitrary = arbitraryBS
@@ -80,15 +85,29 @@ newtype Rand32 = Rand32 ByteString deriving (Show, Eq)
 instance Arbitrary Rand32 where
   arbitrary = Rand32 . BS.pack <$> vectorOf 32 arbitrary
 
+unsafeRight :: (Show e) => Either e a -> a
+unsafeRight = either (error . show) id
+
+unsafeMkSecNonce :: Pub -> Integer -> Integer -> SecNonce
+unsafeMkSecNonce pub k1 k2 = unsafeRight (mkSecNonce pub k1 k2)
+
+data SignerMaterial = SignerMaterial
+  { signerSecKey :: SecKey
+  , signerPubKey :: Pub
+  , signerSecNonce :: SecNonce
+  }
+
 {- | 'Arbitrary' instance for 'SecNonceGenParams'.
 
 Slightly biased towards 'Just' than 'Nothing'.
 -}
 instance Arbitrary SecNonceGenParams where
   arbitrary = do
-    _pk <- arbitrary
     _sk <- frequency [(2, return Nothing), (3, genMaybeSecKey)]
-    _aggpk <- frequency [(2, return Nothing), (3, Just <$> arbitrary)]
+    _pk <- case _sk of
+      Nothing -> genNonZeroPub
+      Just (SecKey sk) -> pure $ fromMaybe (error "Failed to derive pubkey from generated secret key") $ derive_pub (fromInteger sk)
+    _aggpk <- frequency [(2, return Nothing), (3, Just <$> genNonZeroPub)]
     _msg <- frequency [(2, return Nothing), (3, Just <$> arbitraryBS)]
     _extraIn <- frequency [(2, return Nothing), (3, Just <$> arbitraryBS)]
     return SecNonceGenParams{..}
@@ -133,17 +152,20 @@ instance Arbitrary PubNonce where
 -- | 'Arbitrary' instace of 'SecNonce'.
 instance Arbitrary SecNonce where
   arbitrary = do
-    k1 <- choose (1, curveOrder - 1) -- Ensure non-zero
-    k2 <- choose (1, curveOrder - 1) -- Ensure non-zero
-    return SecNonce{k1 = k1, k2 = k2}
+    scalar <- choose (1, curveOrder - 1)
+    let pub = fromMaybe (error "Failed to derive pubkey for SecNonce") $ derive_pub (fromInteger scalar)
+    k1 <- choose (1, curveOrder - 1)
+    k2 <- choose (1, curveOrder - 1)
+    pure (unsafeMkSecNonce pub k1 k2)
 
 {- | 'Show' instance for 'SecNonce'.
 
 Should only used for testing purposes, hence why it is only defined in this test module.
 -}
 instance Show SecNonce where
-  show (SecNonce k1 k2) =
-    "SecNonce { k1=" ++ show k1 ++ ", k2=" ++ show k2 ++ "}"
+  show secNonce =
+    let (k1, k2) = secNonceScalars secNonce
+     in "SecNonce { k1=" ++ show k1 ++ ", k2=" ++ show k2 ++ "}"
 
 -- | 'Arbitrary' instace of 'SecKey'.
 instance Arbitrary SecKey where
@@ -157,6 +179,28 @@ Should only used for testing purposes, hence why it is only defined in this test
 -}
 instance Show SecKey where
   show (SecKey int) = "SecKey " ++ show int
+
+instance Arbitrary SignerMaterial where
+  arbitrary = do
+    sk <- choose (1, curveOrder - 1)
+    let secKey = SecKey sk
+        pub = fromMaybe (error "Failed to derive pubkey for signer material") $ derive_pub (fromInteger sk)
+    k1 <- choose (1, curveOrder - 1)
+    k2 <- choose (1, curveOrder - 1)
+    pure
+      SignerMaterial
+        { signerSecKey = secKey
+        , signerPubKey = pub
+        , signerSecNonce = unsafeMkSecNonce pub k1 k2
+        }
+
+instance Show SignerMaterial where
+  show signer =
+    "SignerMaterial { signerSecKey = "
+      ++ show (signerSecKey signer)
+      ++ ", signerSecNonce = "
+      ++ show (signerSecNonce signer)
+      ++ "}"
 
 -- | 'Arbitrary' instance for 'Tweak'.
 instance Arbitrary Tweak where

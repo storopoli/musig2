@@ -43,7 +43,7 @@ A sample GHCi session:
 > let pubkeys = [pub1, pub2]
 >
 > -- create key aggregation context
-> let keyagg_ctx = MuSig2.mkKeyAggContext pubkeys Nothing
+> let Right keyagg_ctx = MuSig2.mkKeyAggContext pubkeys Nothing
 > let agg_pk = MuSig2.aggregatedPubkey keyagg_ctx
 >
 > -- message to sign
@@ -52,23 +52,23 @@ A sample GHCi session:
 > -- generate nonces for each signer
 > let params1 = MuSig2.defaultSecNonceGenParams pub1
 > let params2 = MuSig2.defaultSecNonceGenParams pub2
-> secnonce1 <- MuSig2.secNonceGen params1
-> secnonce2 <- MuSig2.secNonceGen params2
+> Right secnonce1 <- MuSig2.secNonceGen params1
+> Right secnonce2 <- MuSig2.secNonceGen params2
 > let pubnonce1 = MuSig2.publicNonce secnonce1
 > let pubnonce2 = MuSig2.publicNonce secnonce2
 > let pubnonces = [pubnonce1, pubnonce2]
 >
 > -- aggregate nonces and create session context
-> let Just aggnonce = MuSig2.aggNonces pubnonces
-> let session_ctx = MuSig2.mkSessionContext aggnonce pubkeys [] msg
+> let Right aggnonce = MuSig2.aggNonces pubnonces
+> let Right session_ctx = MuSig2.mkSessionContext aggnonce pubkeys [] msg
 >
 > -- each signer creates a partial signature
-> let psig1 = MuSig2.sign secnonce1 sec1 session_ctx
-> let psig2 = MuSig2.sign secnonce2 sec2 session_ctx
+> let Right psig1 = MuSig2.sign secnonce1 sec1 session_ctx
+> let Right psig2 = MuSig2.sign secnonce2 sec2 session_ctx
 > let psigs = [psig1, psig2]
 >
 > -- aggregate partial signatures into final signature
-> let final_sig = MuSig2.aggPartials psigs session_ctx
+> let Right final_sig = MuSig2.aggPartials psigs session_ctx
 >
 > -- verify the aggregated signature
 > Secp256k1.verify_schnorr msg agg_pk final_sig
@@ -77,6 +77,7 @@ A sample GHCi session:
 -}
 module Crypto.Curve.Secp256k1.MuSig2 (
   -- Main types and functions
+  MuSig2Error (..),
   sign,
   SecKey (..),
   PartialSignature,
@@ -94,8 +95,9 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   Tweak (..),
   sortPublicKeys,
   -- nonces
-  SecNonce (..),
+  SecNonce,
   mkSecNonce,
+  secNonceScalars,
   SecNonceGenParams (..),
   defaultSecNonceGenParams,
   secNonceGen,
@@ -105,7 +107,7 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   aggNonces,
 ) where
 
-import Control.Exception (ErrorCall (..), evaluate, throwIO, try)
+import Control.Monad (foldM)
 import Crypto.Curve.Secp256k1 (Projective, Pub, add, derive_pub, mul, neg, serialize_point, _CURVE_G, _CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2.Internal
 import Data.Binary.Put (
@@ -121,15 +123,58 @@ import qualified Data.ByteString.Lazy as LBS
 #if !MIN_VERSION_base(4,20,0)
 import Data.Foldable (foldl')
 #endif
-import Data.Foldable (toList)
-import Data.List (isPrefixOf)
-import Data.Maybe (fromJust, fromMaybe)
+import Data.Foldable (toList, traverse_)
+import Data.Maybe (fromMaybe)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Traversable ()
 import Data.Word (Word32, Word64, Word8)
 import GHC.Generics (Generic)
 import System.Entropy (getEntropy)
+
+data MuSig2Error
+  = EmptyPartialSignatureCollection
+  | EmptyNonceCollection
+  | EmptyPublicKeyCollection
+  | TooManyPublicKeys
+  | TooManyTweaks
+  | PublicKeyAtInfinity
+  | SignerCountMismatch Int Int
+  | InvalidSignerIndex Int
+  | NegativeTweak Integer
+  | TweakOutOfRange Integer
+  | AggregatedPublicKeyAtInfinity
+  | TweakResultAtInfinity
+  | SecretScalarZero String
+  | SecretScalarOutOfRange String Integer
+  | SecretKeyPublicKeyMismatch
+  | PartialSignatureOutOfRange Integer
+  | InvalidRandomBytesLength Int
+  | PublicNonceGenerationFailed String
+  | KeyDerivationFailed
+  | ScalarMultiplicationFailed String
+  | ZeroNonceGenerated
+  deriving (Eq, Show)
+
+liftMaybe :: e -> Maybe a -> Either e a
+liftMaybe err = maybe (Left err) Right
+
+validateSecretScalar :: String -> Integer -> Either MuSig2Error Integer
+validateSecretScalar label scalar
+  | scalar == 0 = Left (SecretScalarZero label)
+  | scalar < 0 || scalar >= curveOrder = Left (SecretScalarOutOfRange label scalar)
+  | otherwise = Right scalar
+
+validateTweakValue :: Integer -> Either MuSig2Error Integer
+validateTweakValue tweak
+  | tweak < 0 = Left (NegativeTweak tweak)
+  | tweak >= curveOrder = Left (TweakOutOfRange tweak)
+  | otherwise = Right tweak
+
+validatePublicKey :: Pub -> Either MuSig2Error Pub
+validatePublicKey pub
+  | pub == _CURVE_ZERO = Left PublicKeyAtInfinity
+  | otherwise = Right pub
 
 -- | Aggregates 'PartialSignature's into a 64-byte Schnorr signature.
 aggPartials ::
@@ -139,26 +184,36 @@ aggPartials ::
   -- | Session context.
   SessionContext ->
   -- | 64-byte Schnorr signature.
-  ByteString
+  Either MuSig2Error ByteString
 aggPartials partials ctx =
-  let
-    nonce = getSigningNonce ctx
-    e = bytesToInteger $ getSigningHash ctx
-    keyCtx = cachedKeyAggCtx ctx
-    aggPk = q keyCtx
-    taccVal = maybe 0 getTweak $ tacc keyCtx
-    gaccVal = gacc keyCtx
-    -- BIP 327: Let g = 1 if has_even_y(Q), otherwise let g = -1 mod n
-    g = if isEvenPub aggPk then 1 else curveOrder - 1
-    -- Apply accumulated parity factor
-    g' = modQ (g * gaccVal)
-    sSum = modQ $ sum partials
-    -- BIP 327: Let s = s₁ + ... + sᵤ + e⋅g'⋅tacc mod n
-    s = modQ (sSum + e * g' * taccVal)
-    left = xBytes nonce
-    right = integerToBytes32 s
-   in
-    left <> right
+  if Seq.null partialsSeq
+    then Left EmptyPartialSignatureCollection
+    else case traverse validatePartialSignature partialsSeq of
+      Left err -> Left err
+      Right validPartials ->
+        let
+          nonce = getSigningNonce ctx
+          e = bytesToInteger $ getSigningHash ctx
+          keyCtx = cachedKeyAggCtx ctx
+          aggPk = q keyCtx
+          taccVal = maybe 0 getTweak $ tacc keyCtx
+          gaccVal = gacc keyCtx
+          -- BIP 327: Let g = 1 if has_even_y(Q), otherwise let g = -1 mod n
+          g = if isEvenPub aggPk then 1 else curveOrder - 1
+          -- Apply accumulated parity factor
+          g' = modQ (g * gaccVal)
+          sSum = modQ $ sum validPartials
+          -- BIP 327: Let s = s₁ + ... + sᵤ + e⋅g'⋅tacc mod n
+          s = modQ (sSum + e * g' * taccVal)
+          left = xBytes nonce
+          right = integerToBytes32 s
+         in
+          Right (left <> right)
+ where
+  partialsSeq = Seq.fromList (toList partials)
+  validatePartialSignature partial
+    | partial < 0 || partial >= curveOrder = Left (PartialSignatureOutOfRange partial)
+    | otherwise = Right partial
 
 {- | Compute a partial signature on a message.
 
@@ -174,38 +229,42 @@ sign ::
   -- | Session context.
   SessionContext ->
   -- | Partial signature.
-  PartialSignature
+  Either MuSig2Error PartialSignature
 sign secnonce sk ctx =
-  let
-    publicKeys = pks ctx
-    nonce = getSigningNonce ctx
-    e = bytesToInteger $ getSigningHash ctx
-    keyCtx = cachedKeyAggCtx ctx
-    aggPk = q keyCtx
-    oddAggPk = not $ isEvenPub aggPk
-    gaccVal = gacc keyCtx
-    k1 = if secnonce.k1 == 0 then error "musig2 (sign): first secret scalar k1 is zero" else secnonce.k1
-    k2 = if secnonce.k2 == 0 then error "musig2 (sign): first secret scalar k2 is zero" else secnonce.k2
-    d' = if unSecKey sk == 0 then error "musig2 (sign): secret key is zero" else unSecKey sk
-    -- `d` is negated if exactly one of the parity accumulator OR the aggregated pubkey has odd parity.
-    -- gaccVal == 1 means no negation, gaccVal == n-1 means negation
-    parityFromGacc = gaccVal /= 1
-    d = if parityFromGacc /= oddAggPk then curveOrder - d' else d'
-    p = fromMaybe (error "musig2 (sign): failed to derive public key") $ derive_pub (fromInteger d') -- Use original secret key for public key derivation
-    a = computeKeyAggCoef p publicKeys
-    -- if has_even_Y(R):
-    --   k = k1 + b*k2
-    -- else:
-    --   k = (n-k1) + b(n-k2)
-    --     = n - (k1 + b*k2)
-    b = getSigningNonceCoeff ctx
-    k = if isEvenPub nonce then k1 + b * k2 else curveOrder - (k1 + b * k2)
-    s = modQ (k + e * a * d)
-    r1' = fromMaybe (error "musig2 (sign): failed to compute r1") $ mul _CURVE_G (fromInteger secnonce.k1)
-    r2' = fromMaybe (error "musig2 (sign): failed to compute r2") $ mul _CURVE_G (fromInteger secnonce.k2)
-    pubNonce' = PubNonce r1' r2'
-   in
-    if partialSigVerifyInternal s pubNonce' p ctx then s else error "musig2 (sign): could not verify partial signature against public nonce, public key and session context"
+  do
+    let publicKeys = pks ctx
+        nonce = getSigningNonce ctx
+        e = bytesToInteger $ getSigningHash ctx
+        keyCtx = cachedKeyAggCtx ctx
+        aggPk = q keyCtx
+        oddAggPk = not $ isEvenPub aggPk
+        gaccVal = gacc keyCtx
+        SecNonce k1 k2 boundPk = secnonce
+    _ <- validateSecretScalar "k1" k1
+    _ <- validateSecretScalar "k2" k2
+    d' <- validateSecretScalar "secret key" (unSecKey sk)
+    p <- liftMaybe KeyDerivationFailed $ derive_pub (fromInteger d')
+    if p /= boundPk
+      then Left SecretKeyPublicKeyMismatch
+      else do
+        let
+          -- `d` is negated if exactly one of the parity accumulator OR the aggregated pubkey has odd parity.
+          -- gaccVal == 1 means no negation, gaccVal == n-1 means negation
+          parityFromGacc = gaccVal /= 1
+          d = if parityFromGacc /= oddAggPk then curveOrder - d' else d'
+          a = computeKeyAggCoef p publicKeys
+          -- if has_even_Y(R):
+          --   k = k1 + b*k2
+          -- else:
+          --   k = (n-k1) + b(n-k2)
+          --     = n - (k1 + b*k2)
+          b = getSigningNonceCoeff ctx
+          k = if isEvenPub nonce then k1 + b * k2 else curveOrder - (k1 + b * k2)
+          s = modQ (k + e * a * d)
+        verified <- partialSigVerifyInternal s (publicNonce secnonce) p ctx
+        if verified
+          then Right s
+          else Left (PublicNonceGenerationFailed "partial signature self-verification failed")
 
 {- | A partial signature which is a scalar in the range \(0 \leq x < n\) where
 \(n\) is the curve order.
@@ -228,19 +287,19 @@ partialSigVerify ::
   -- | Index of the signer.
   Int ->
   -- | If the partial signature is valid.
-  Bool
+  Either MuSig2Error Bool
 partialSigVerify partial nonces pks tweaks msg idx =
-  let aggNonce = fromJust $ aggNonces nonces
-      ctx = mkSessionContext aggNonce pks tweaks msg
-      noncesSeq = Seq.fromList (toList nonces)
-      pksSeq = Seq.fromList (toList pks)
-      pk = case Seq.lookup idx pksSeq of
-        Just p -> p
-        Nothing -> error "musig2 (partialSigVerify): signer index out of range of the list of public keys"
-      pubnonce = case Seq.lookup idx noncesSeq of
-        Just n -> n
-        Nothing -> error "musig2 (partialSigVerify): signer index out of range of the list of public nonces"
-   in partialSigVerifyInternal partial pubnonce pk ctx
+  do
+    aggNonce <- aggNonces nonces
+    ctx <- mkSessionContext aggNonce pks tweaks msg
+    let noncesSeq = Seq.fromList (toList nonces)
+        pksSeq = Seq.fromList (toList pks)
+    if Seq.length noncesSeq /= Seq.length pksSeq
+      then Left (SignerCountMismatch (Seq.length pksSeq) (Seq.length noncesSeq))
+      else do
+        pk <- maybe (Left (InvalidSignerIndex idx)) Right (Seq.lookup idx pksSeq)
+        pubnonce <- maybe (Left (InvalidSignerIndex idx)) Right (Seq.lookup idx noncesSeq)
+        partialSigVerifyInternal partial pubnonce pk ctx
 
 {- | Verifies a 'PartialSignature'.
 
@@ -258,35 +317,39 @@ partialSigVerifyInternal ::
   -- | MuSig2 session context.
   SessionContext ->
   -- | If the partial signature is valid.
-  Bool
+  Either MuSig2Error Bool
 partialSigVerifyInternal partial pubnonce pk ctx =
-  let
-    publicKeys = pks ctx
-    keyCtx = cachedKeyAggCtx ctx
-    aggPk = q keyCtx
-    oddAggPk = not $ isEvenPub aggPk
-    gaccVal = gacc keyCtx
-    e = bytesToInteger $ getSigningHash ctx
-    r1' = pubnonce.r1
-    r2' = pubnonce.r2
-    b = getSigningNonceCoeff ctx
-    finalNonce = getSigningNonce ctx -- This is the final aggregate nonce used for evenness check
-    s = if partial < 0 || partial >= curveOrder then error "musig2 (partialSigVerifyInternal): partial signature must be within curve order." else partial
-    -- Reconstruct the individual's effective nonce: R_s1 + b * R_s2
-    r2b = fromMaybe (error "musig2 (partialSigVerifyInternal): failed to compute r2 * b") $ mul r2' (fromInteger b)
-    re' = add r1' r2b
-    -- Negate individual nonce if final aggregate nonce has odd Y
-    re = if isEvenPub finalNonce then re' else neg re'
-    a = computeKeyAggCoef pk publicKeys
-    -- Calculate g factor: 1 if aggregate pubkey has even Y, n-1 if odd
-    g = if oddAggPk then curveOrder - 1 else 1
-    -- Apply parity accumulator: gacc is accumulated parity factor
-    g' = modQ (g * gaccVal)
-    sG = fromMaybe (error "musig2 (partialSigVerifyInternal): failed to compute s * G") $ mul _CURVE_G (fromInteger s)
-    pkMul = fromMaybe (error "musig2 (partialSigVerifyInternal): failed to compute pk multiplication") $ mul pk (fromInteger (modQ (e * a * g')))
-    sG' = re `add` pkMul
-   in
-    sG == sG'
+  do
+    s <- validatePartialSignature partial
+    let
+      publicKeys = pks ctx
+      keyCtx = cachedKeyAggCtx ctx
+      aggPk = q keyCtx
+      oddAggPk = not $ isEvenPub aggPk
+      gaccVal = gacc keyCtx
+      e = bytesToInteger $ getSigningHash ctx
+      r1' = pubnonce.r1
+      r2' = pubnonce.r2
+      b = getSigningNonceCoeff ctx
+      finalNonce = getSigningNonce ctx
+      a = computeKeyAggCoef pk publicKeys
+      -- Calculate g factor: 1 if aggregate pubkey has even Y, n-1 if odd
+      g = if oddAggPk then curveOrder - 1 else 1
+      -- Apply parity accumulator: gacc is accumulated parity factor
+      g' = modQ (g * gaccVal)
+    r2b <- liftMaybe (ScalarMultiplicationFailed "r2 * b") $ mul r2' (fromInteger b)
+    sG <- liftMaybe (ScalarMultiplicationFailed "s * G") $ mul _CURVE_G (fromInteger s)
+    pkMul <- liftMaybe (ScalarMultiplicationFailed "pk multiplication") $ mul pk (fromInteger (modQ (e * a * g')))
+    let
+      re' = add r1' r2b
+      -- Negate individual nonce if final aggregate nonce has odd Y
+      re = if isEvenPub finalNonce then re' else neg re'
+      sG' = re `add` pkMul
+    Right (sG == sG')
+ where
+  validatePartialSignature s
+    | s < 0 || s >= curveOrder = Left (PartialSignatureOutOfRange s)
+    | otherwise = Right s
 
 -- | Secret key.
 newtype SecKey = SecKey Integer
@@ -328,22 +391,20 @@ mkKeyAggContext ::
   -- | Optional 'Tweak' value.
   Maybe Tweak ->
   -- | Resulting 'KeyAggContext'.
-  KeyAggContext
+  Either MuSig2Error KeyAggContext
 mkKeyAggContext pks mTweak
-  | Seq.null pks' = error "musig2 (mkKeyAggContext): empty public key collection"
-  | Seq.length pks' > fromIntegral (maxBound :: Word32) = error "musig2 (mkKeyAggContext): too many public keys (max 2^32 - 1)"
-  | _CURVE_ZERO `elem` pks' = error "musig2 (mkKeyAggContext): public key at point of infinity"
-  | maybe False ((< 0) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be non-negative"
-  | maybe False ((>= curveOrder) . getTweak) mTweak = error "musig2 (mkKeyAggContext): tweak must be less than curve order"
-  | otherwise = case aggPublicKeys pks' of
-      Nothing -> error "musig2 (mkKeyAggContext): failed to aggregate public keys"
-      Just aggPk
-        | aggPk == _CURVE_ZERO -> error "musig2 (mkKeyAggContext): aggregated public key is point at infinity"
-        | otherwise ->
-            let baseCtx = KeyAggContext aggPk Nothing 1
-             in case mTweak of
-                  Nothing -> baseCtx
-                  Just tweak -> applyTweak baseCtx tweak
+  | Seq.null pks' = Left EmptyPublicKeyCollection
+  | Seq.length pks' > fromIntegral (maxBound :: Word32) = Left TooManyPublicKeys
+  | otherwise = do
+      traverse_ validatePublicKey pks'
+      aggPk <- liftMaybe AggregatedPublicKeyAtInfinity $ aggPublicKeys pks'
+      if aggPk == _CURVE_ZERO
+        then Left AggregatedPublicKeyAtInfinity
+        else do
+          let baseCtx = KeyAggContext aggPk Nothing 1
+          case mTweak of
+            Nothing -> Right baseCtx
+            Just tweak -> applyTweak baseCtx tweak
  where
   pks' = Seq.fromList (toList pks)
 
@@ -387,28 +448,19 @@ mkSessionContext ::
   -- | Message to be signed.
   ByteString ->
   -- | Resulting 'SessionContext'.
-  SessionContext
+  Either MuSig2Error SessionContext
 mkSessionContext aggNonce pks tweaks msg
-  | Seq.null pks' = error "musig2 (mkSessionContext): empty public key collection"
-  | Seq.length pks' > fromIntegral (maxBound :: Word32) = error "musig2 (mkSessionContext): too many public keys (max 2^32 - 1)"
-  | _CURVE_ZERO `elem` pks' = error "musig2 (mkSessionContext): public key at point of infinity"
-  | Seq.length tweaks' > fromIntegral (maxBound :: Word32) = error "musig2 (mkSessionContext): too many tweaks (max 2^32 - 1)"
-  | any checkNeg tweaks' = error "musig2 (mkSessionContext): tweaks must be non-negative"
-  | any checkOrder tweaks' = error "musig2 (mkSessionContext): tweaks must be less than curve order"
-  | otherwise = case aggPublicKeys pks' of
-      Nothing -> error "musig2 (mkSessionContext): failed to aggregate public keys"
-      Just aggPk
-        | aggPk == _CURVE_ZERO -> error "musig2 (mkSessionContext): aggregated public key is point at infinity"
-        | otherwise -> SessionContext aggNonce pks' tweaks' msg keyCtx
+  | Seq.null pks' = Left EmptyPublicKeyCollection
+  | Seq.length pks' > fromIntegral (maxBound :: Word32) = Left TooManyPublicKeys
+  | Seq.length tweaks' > fromIntegral (maxBound :: Word32) = Left TooManyTweaks
+  | otherwise = do
+      traverse_ validatePublicKey pks'
+      traverse_ (validateTweakValue . getTweak) tweaks'
+      keyCtx <- if Seq.null tweaks' then mkKeyAggContext pks' Nothing else mkKeyAggContext pks' Nothing >>= \baseCtx -> foldM applyTweak baseCtx tweaks'
+      Right (SessionContext aggNonce pks' tweaks' msg keyCtx)
  where
   pks' = Seq.fromList (toList pks)
   tweaks' = Seq.fromList (toList tweaks)
-  checkNeg = (< 0) . getTweak
-  checkOrder = (>= curveOrder) . getTweak
-  -- Compute and cache the KeyAggContext once
-  keyCtx =
-    let baseCtx = mkKeyAggContext pks' Nothing
-     in if Seq.null tweaks' then baseCtx else foldl' applyTweak baseCtx tweaks'
 
 {- | Gets the signing nonce as a 'Projective' following
 [BIP-0327 algorithm and recommendations](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki#dealing-with-infinity-in-nonce-aggregation).
@@ -476,36 +528,34 @@ getTweak :: Tweak -> Integer
 getTweak (XOnlyTweak int) = int
 getTweak (PlainTweak int) = int
 
--- | Applies a tweak to a KeyAggContext and returns a new KeyAggContext following [BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
-applyTweak :: KeyAggContext -> Tweak -> KeyAggContext
-applyTweak ctx newTweak =
+applyTweak :: KeyAggContext -> Tweak -> Either MuSig2Error KeyAggContext
+applyTweak ctx newTweak = do
   let pubkey = q ctx
       mAccTweak = tacc ctx
       gaccIn = gacc ctx
       accTweakVal = maybe 0 getTweak mAccTweak
-   in case newTweak of
-        PlainTweak t ->
-          -- Plain tweak: g = 1, Q' = g*Q + t*G, tacc' = t + g*tacc, gacc' = g*gacc
-          let g = 1
-              pubkeyMul = fromMaybe (error "musig2 (applyTweak): failed to compute pubkey * g") $ mul pubkey (fromInteger g)
-              tG = fromMaybe (error "musig2 (applyTweak): failed to compute t * G") $ mul _CURVE_G (fromInteger t)
-              tweakedPk = add pubkeyMul tG
-              newAccTweak = modQ (t + (g * accTweakVal))
-              newGacc = modQ (g * gaccIn)
-           in if tweakedPk == _CURVE_ZERO
-                then error "musig2 (applyTweak): result of tweaking cannot be infinity"
-                else ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak), gacc = newGacc}
-        XOnlyTweak t ->
-          -- X-only tweak: g = 1 if even Y, g = n-1 if odd Y, tacc' = t + g*tacc
-          let g = if isEvenPub pubkey then 1 else curveOrder - 1
-              pubkeyMul = fromMaybe (error "musig2 (applyTweak): failed to compute pubkey * g") $ mul pubkey (fromInteger g)
-              tG = fromMaybe (error "musig2 (applyTweak): failed to compute t * G") $ mul _CURVE_G (fromInteger t)
-              tweakedPk = add pubkeyMul tG
-              newAccTweak = modQ (t + (g * accTweakVal))
-              newGacc = modQ (g * gaccIn)
-           in if tweakedPk == _CURVE_ZERO
-                then error "musig2 (applyTweak): result of tweaking cannot be infinity"
-                else ctx{q = tweakedPk, tacc = Just (XOnlyTweak newAccTweak), gacc = newGacc}
+  t <- validateTweakValue (getTweak newTweak)
+  case newTweak of
+    PlainTweak _ -> do
+      let g = 1
+      pubkeyMul <- liftMaybe (ScalarMultiplicationFailed "pubkey * g") $ mul pubkey (fromInteger g)
+      tG <- liftMaybe (ScalarMultiplicationFailed "t * G") $ mul _CURVE_G (fromInteger t)
+      let tweakedPk = add pubkeyMul tG
+          newAccTweak = modQ (t + (g * accTweakVal))
+          newGacc = modQ (g * gaccIn)
+      if tweakedPk == _CURVE_ZERO
+        then Left TweakResultAtInfinity
+        else Right ctx{q = tweakedPk, tacc = Just (PlainTweak newAccTweak), gacc = newGacc}
+    XOnlyTweak _ -> do
+      let g = if isEvenPub pubkey then 1 else curveOrder - 1
+      pubkeyMul <- liftMaybe (ScalarMultiplicationFailed "pubkey * g") $ mul pubkey (fromInteger g)
+      tG <- liftMaybe (ScalarMultiplicationFailed "t * G") $ mul _CURVE_G (fromInteger t)
+      let tweakedPk = add pubkeyMul tG
+          newAccTweak = modQ (t + (g * accTweakVal))
+          newGacc = modQ (g * gaccIn)
+      if tweakedPk == _CURVE_ZERO
+        then Left TweakResultAtInfinity
+        else Right ctx{q = tweakedPk, tacc = Just (XOnlyTweak newAccTweak), gacc = newGacc}
 
 -- | Manual 'Ord' implementation of 'Projective' for lexicography sorting.
 instance Ord Projective where
@@ -541,32 +591,32 @@ If you want to follow
 suggestions, then use 'secNonceGen' otherwise use 'mkSecNonce'.
 -}
 data SecNonce = SecNonce
-  { k1 :: !Integer
+  { secNonceK1Internal :: !Integer
   -- ^ First secret scalar.
-  , k2 :: !Integer
+  , secNonceK2Internal :: !Integer
   -- ^ Second secret scalar.
+  , secNoncePubKeyInternal :: !Pub
+  -- ^ Public key this nonce is bound to.
   }
-  deriving (Read, Eq, Ord, Generic)
+  deriving (Eq, Ord, Generic)
 
-{- | Generates a 'SecNonce' using only the system's underlying Cryptographic Secure
-Pseudorandom Number Generator (CSPRNG) using the
-[@entropy@](https://hackage.haskell.org/package/entropy) package.
+-- | Returns the two secret scalars contained in a 'SecNonce'.
+secNonceScalars :: SecNonce -> (Integer, Integer)
+secNonceScalars secNonce = (secNonceK1Internal secNonce, secNonceK2Internal secNonce)
 
-== WARNING
-
-Make sure that you have access to a good CSPRNG in your system before calling
-this function.
-
-Note that this does not follow the
-[BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
-algorithm.
--}
-mkSecNonce :: IO SecNonce
-mkSecNonce = do
-  bytes <- getEntropy 64 -- 64 bytes = 512 bits for two 256-bit scalars
-  let k1' = bytesToInteger (BS.take 32 bytes)
-      k2' = bytesToInteger (BS.drop 32 bytes)
-  pure SecNonce{k1 = k1', k2 = k2'}
+mkSecNonce ::
+  -- | Public key this nonce is bound to.
+  Pub ->
+  -- | First secret scalar.
+  Integer ->
+  -- | Second secret scalar.
+  Integer ->
+  Either MuSig2Error SecNonce
+mkSecNonce pub k1 k2 = do
+  _ <- validatePublicKey pub
+  k1' <- validateSecretScalar "k1" k1
+  k2' <- validateSecretScalar "k2" k2
+  Right SecNonce{secNonceK1Internal = k1', secNonceK2Internal = k2', secNoncePubKeyInternal = pub}
 
 -- | Required and Optional data to generate a 'SecNonce'.
 data SecNonceGenParams = SecNonceGenParams
@@ -606,16 +656,14 @@ Pseudorandom Number Generator (CSPRNG) using the
 Make sure that you have access to a good CSPRNG in your system before calling
 this function.
 -}
-secNonceGen :: SecNonceGenParams -> IO SecNonce
+secNonceGen :: SecNonceGenParams -> IO (Either MuSig2Error SecNonce)
 secNonceGen params = loop
  where
   loop = do
     rand <- getEntropy 32
-    eres <- try (evaluate (secNonceGenWithRand rand params))
-    case eres of
-      Right sn -> pure sn
-      Left (ErrorCall msg) | "musig2 (nonceGen): zero nonce generated" `isPrefixOf` msg -> loop
-      Left e -> throwIO e
+    case secNonceGenWithRand rand params of
+      Left ZeroNonceGenerated -> loop
+      other -> pure other
 
 {- | Generates a 'SecNonce' using a given random 'ByteString' and the inputs and
 algorithms from
@@ -626,8 +674,21 @@ algorithms from
 You should probably use 'secNonceGen'.
 Use this function if you really have a randomly-generated 'ByteString'.
 -}
-secNonceGenWithRand :: ByteString -> SecNonceGenParams -> SecNonce
-secNonceGenWithRand rand _params@(SecNonceGenParams{_pk = pkPoint, ..}) =
+secNonceGenWithRand :: ByteString -> SecNonceGenParams -> Either MuSig2Error SecNonce
+secNonceGenWithRand rand _params@(SecNonceGenParams{_pk = pkPoint, ..}) = do
+  if BS.length rand /= 32
+    then Left (InvalidRandomBytesLength (BS.length rand))
+    else Right ()
+  _ <- validatePublicKey pkPoint
+  traverse_ validatePublicKey _aggpk
+  case _sk of
+    Nothing -> Right ()
+    Just (SecKey skScalar) -> do
+      skScalar' <- validateSecretScalar "secret key" skScalar
+      expectedPk <- liftMaybe KeyDerivationFailed $ derive_pub (fromInteger skScalar')
+      if expectedPk == pkPoint
+        then Right ()
+        else Left SecretKeyPublicKeyMismatch
   let
     -- Step 2: Optional sk XOR (with tagged hash for safety)
     rand' = case _sk of
@@ -663,11 +724,9 @@ secNonceGenWithRand rand _params@(SecNonceGenParams{_pk = pkPoint, ..}) =
 
     k1' = modQ . bytesToInteger $ hashTag "MuSig/nonce" (mkInput 0)
     k2' = modQ . bytesToInteger $ hashTag "MuSig/nonce" (mkInput 1)
-   in
-    -- Step 9: check for zero nonce and retry if so
-    if k1' == 0 || k2' == 0
-      then error "musig2 (nonceGen): zero nonce generated (retry)"
-      else SecNonce{k1 = k1', k2 = k2'}
+  if k1' == 0 || k2' == 0
+    then Left ZeroNonceGenerated
+    else mkSecNonce pkPoint k1' k2'
 
 {- | Public nonce.
 
@@ -688,8 +747,9 @@ data PubNonce = PubNonce
 -- | Generates a 'PubNonce' from a 'SecNonce'.
 publicNonce :: SecNonce -> PubNonce
 publicNonce secNonce =
-  let r1' = fromMaybe (error "musig2 (publicNonce): failed to compute r1") $ mul _CURVE_G (fromInteger (k1 secNonce))
-      r2' = fromMaybe (error "musig2 (publicNonce): failed to compute r2") $ mul _CURVE_G (fromInteger (k2 secNonce))
+  let (k1, k2) = secNonceScalars secNonce
+      r1' = fromMaybe (error "musig2 (publicNonce): failed to compute r1") $ mul _CURVE_G (fromInteger k1)
+      r2' = fromMaybe (error "musig2 (publicNonce): failed to compute r2") $ mul _CURVE_G (fromInteger k2)
    in PubNonce r1' r2'
 
 -- | 'Data.Semigroup' implementation of 'PubNonce' for algebraic sound combination of public nonces.
@@ -708,11 +768,11 @@ instance Monoid PubNonce where
 {- | Aggregates a 'Traversable' of 'PubNonce's using the
 [Nonce Aggregation algorithm in BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
 -}
-aggNonces :: (Traversable t) => t PubNonce -> Maybe PubNonce
+aggNonces :: (Traversable t) => t PubNonce -> Either MuSig2Error PubNonce
 aggNonces nonces
-  | Seq.null noncesSeq = Nothing
+  | Seq.null noncesSeq = Left EmptyNonceCollection
   | otherwise = case Seq.viewl noncesSeq of
-      Seq.EmptyL -> Nothing
-      x Seq.:< xs -> Just $! foldl' (<>) x xs
+      Seq.EmptyL -> Left EmptyNonceCollection
+      x Seq.:< xs -> Right $! foldl' (<>) x xs
  where
   noncesSeq = Seq.fromList (toList nonces)

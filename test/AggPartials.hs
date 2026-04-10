@@ -5,11 +5,11 @@
 module AggPartials (testAggPartials) where
 
 import Crypto.Curve.Secp256k1 (Pub)
-import Crypto.Curve.Secp256k1.MuSig2 (PartialSignature, PubNonce (..), Tweak (..), aggPartials, mkSessionContext)
+import Crypto.Curve.Secp256k1.MuSig2 (MuSig2Error (..), PartialSignature, PubNonce (..), Tweak (..), aggPartials, mkSessionContext)
 import Data.ByteString (ByteString)
 import Test.Tasty
 import Test.Tasty.HUnit
-import Util (decodeHex, parsePoint, parsePubNonce, parseScalar)
+import Util (decodeHex, parsePoint, parsePubNonce, parseScalar, unsafeRight)
 
 -- | Test vector structure for signature aggregation.
 data SigAggTestVector = SigAggTestVector
@@ -142,8 +142,8 @@ makeValidTestCase i SigAggTestVector{..} =
     let selectedKeys = map (pubkeys !!) keyIndices
     let selectedTweaks = buildTweaks tweakIndices isXOnly
     let selectedPsigs = map (psigs !!) psigIndices
-    let ctx = mkSessionContext aggNonce selectedKeys selectedTweaks msg
-    let result = aggPartials selectedPsigs ctx
+    let ctx = unsafeRight $ mkSessionContext aggNonce selectedKeys selectedTweaks msg
+    let result = unsafeRight $ aggPartials selectedPsigs ctx
     case expected of
       Just expectedSig -> assertEqual "signature mismatch" expectedSig result
       Nothing -> assertFailure "Expected signature but got nothing"
@@ -152,10 +152,12 @@ makeValidTestCase i SigAggTestVector{..} =
 makeErrorTestCase :: Int -> SigAggTestVector -> TestTree
 makeErrorTestCase i SigAggTestVector{..} =
   testCase ("BIP-0327 SigAgg Error Vector " ++ show (i + 1)) $ do
-    -- For the error case, we expect aggPartials to fail due to invalid partial signature
-    -- The test vector has psig[8] which is FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-    -- This exceeds the curve order and should cause validation to fail
+    let selectedKeys = map (pubkeys !!) keyIndices
+        selectedTweaks = buildTweaks tweakIndices isXOnly
+        selectedPsigs = map (psigs !!) psigIndices
+        ctx = unsafeRight $ mkSessionContext aggNonce selectedKeys selectedTweaks msg
     assertBool "Expected error case" errorCase
+    aggPartials selectedPsigs ctx @?= Left (PartialSignatureOutOfRange (psigs !! 8))
 
 -- | Main test group for signature aggregation.
 testAggPartials :: TestTree
