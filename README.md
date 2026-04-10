@@ -33,7 +33,7 @@ A sample GHCi session:
 > let pubkeys = [pub1, pub2]
 >
 > -- create key aggregation context
-> let keyagg_ctx = MuSig2.mkKeyAggContext pubkeys Nothing
+> let Right keyagg_ctx = MuSig2.mkKeyAggContext pubkeys Nothing
 > let agg_pk = MuSig2.aggregatedPubkey keyagg_ctx
 >
 > -- message to sign
@@ -42,23 +42,23 @@ A sample GHCi session:
 > -- generate nonces for each signer
 > let params1 = MuSig2.defaultSecNonceGenParams pub1
 > let params2 = MuSig2.defaultSecNonceGenParams pub2
-> secnonce1 <- MuSig2.secNonceGen params1
-> secnonce2 <- MuSig2.secNonceGen params2
+> Right secnonce1 <- MuSig2.secNonceGen params1
+> Right secnonce2 <- MuSig2.secNonceGen params2
 > let pubnonce1 = MuSig2.publicNonce secnonce1
 > let pubnonce2 = MuSig2.publicNonce secnonce2
 > let pubnonces = [pubnonce1, pubnonce2]
 >
 > -- aggregate nonces and create session context
-> let Just aggnonce = MuSig2.aggNonces pubnonces
-> let session_ctx = MuSig2.mkSessionContext aggnonce pubkeys [] msg
+> let Right aggnonce = MuSig2.aggNonces pubnonces
+> let Right session_ctx = MuSig2.mkSessionContext aggnonce pubkeys [] msg
 >
 > -- each signer creates a partial signature
-> let psig1 = MuSig2.sign secnonce1 sec1 session_ctx
-> let psig2 = MuSig2.sign secnonce2 sec2 session_ctx
+> let Right psig1 = MuSig2.sign secnonce1 sec1 session_ctx
+> let Right psig2 = MuSig2.sign secnonce2 sec2 session_ctx
 > let psigs = [psig1, psig2]
 >
 > -- aggregate partial signatures into final signature
-> let final_sig = MuSig2.aggPartials psigs session_ctx
+> let Right final_sig = MuSig2.aggPartials psigs session_ctx
 >
 > -- verify the aggregated signature
 > Secp256k1.verify_schnorr msg agg_pk final_sig

@@ -1,15 +1,14 @@
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module SignVerifyProperty (propertySignVerify) where
 
-import Crypto.Curve.Secp256k1 (derive_pub)
-import Crypto.Curve.Secp256k1.MuSig2 (SecKey (..), SecNonce (..), aggNonces, mkSessionContext, partialSigVerify, publicNonce, sign)
+import Crypto.Curve.Secp256k1.MuSig2 (MuSig2Error (..), aggNonces, mkSessionContext, partialSigVerify, publicNonce, sign)
 import Crypto.Curve.Secp256k1.MuSig2.Internal (curveOrder)
 import Data.ByteString (ByteString)
-import Data.Maybe (fromJust, fromMaybe)
 import Test.Tasty
 import Test.Tasty.QuickCheck as QC
-import Util ()
+import Util (SignerMaterial (..), unsafeRight)
 
 propertySignVerify :: TestTree
 propertySignVerify =
@@ -22,54 +21,48 @@ propertySignVerify =
     ]
 
 -- | Property: Generated signatures are in the valid range \([0, Q-1]\).
-prop_validSignatureRange :: SecNonce -> SecKey -> ByteString -> Property
-prop_validSignatureRange secNonce secKey@(SecKey sk) msg =
-  let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub (fromInteger sk)
-      pubNonce = publicNonce secNonce
+prop_validSignatureRange :: SignerMaterial -> ByteString -> Property
+prop_validSignatureRange signer msg =
+  let pubNonce = unsafeRight $ publicNonce signer.signerSecNonce
       pubNonces = [pubNonce]
-      pubkeys = [pubkey]
-      aggNonce = fromJust $ aggNonces pubNonces
-      ctx = mkSessionContext aggNonce pubkeys [] msg
-      sig = sign secNonce secKey ctx
+      pubkeys = [signer.signerPubKey]
+      aggNonce = unsafeRight $ aggNonces pubNonces
+      ctx = unsafeRight $ mkSessionContext aggNonce pubkeys [] msg
+      sig = unsafeRight $ sign signer.signerSecNonce signer.signerSecKey ctx
    in (sig >= 0) .&&. (sig < curveOrder)
 
 -- | Property: A signature created with sign verifies with 'partialSigVerify'.
-prop_signVerifyRoundtrip :: SecNonce -> SecKey -> ByteString -> Property
-prop_signVerifyRoundtrip secNonce secKey@(SecKey sk) msg =
-  let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub (fromInteger sk)
-      pubNonce = publicNonce secNonce
+prop_signVerifyRoundtrip :: SignerMaterial -> ByteString -> Property
+prop_signVerifyRoundtrip signer msg =
+  let pubNonce = unsafeRight $ publicNonce signer.signerSecNonce
       pubNonces = [pubNonce]
-      pubkeys = [pubkey]
-      aggNonce = fromJust $ aggNonces pubNonces
-      ctx = mkSessionContext aggNonce pubkeys [] msg
-      sig = sign secNonce secKey ctx
-      signerIndex = 0 -- We're always the first signer in this test
-      result = partialSigVerify sig pubNonces pubkeys [] msg signerIndex
-   in result === True
+      pubkeys = [signer.signerPubKey]
+      aggNonce = unsafeRight $ aggNonces pubNonces
+      ctx = unsafeRight $ mkSessionContext aggNonce pubkeys [] msg
+      sig = unsafeRight $ sign signer.signerSecNonce signer.signerSecKey ctx
+      result = partialSigVerify sig pubNonces pubkeys [] msg 0
+   in result === Right True
 
 -- | Property: Signing the same message with the same parameters produces the same signature.
-prop_signatureDeterminism :: SecNonce -> SecKey -> ByteString -> Property
-prop_signatureDeterminism secNonce secKey@(SecKey sk) msg =
-  let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub (fromInteger sk)
-      pubNonce = publicNonce secNonce
+prop_signatureDeterminism :: SignerMaterial -> ByteString -> Property
+prop_signatureDeterminism signer msg =
+  let pubNonce = unsafeRight $ publicNonce signer.signerSecNonce
       pubNonces = [pubNonce]
-      pubkeys = [pubkey]
-      aggNonce = fromJust $ aggNonces pubNonces
-      ctx = mkSessionContext aggNonce pubkeys [] msg
-      sig1 = sign secNonce secKey ctx
-      sig2 = sign secNonce secKey ctx
+      pubkeys = [signer.signerPubKey]
+      aggNonce = unsafeRight $ aggNonces pubNonces
+      ctx = unsafeRight $ mkSessionContext aggNonce pubkeys [] msg
+      sig1 = unsafeRight $ sign signer.signerSecNonce signer.signerSecKey ctx
+      sig2 = unsafeRight $ sign signer.signerSecNonce signer.signerSecKey ctx
    in sig1 === sig2
 
 -- | Property: Using an invalid signer index should fail verification.
-prop_invalidSignerIndex :: SecNonce -> SecKey -> ByteString -> Property
-prop_invalidSignerIndex secNonce secKey@(SecKey sk) msg =
-  let pubkey = fromMaybe (error "Failed to derive pubkey") $ derive_pub (fromInteger sk)
-      pubNonce = publicNonce secNonce
+prop_invalidSignerIndex :: SignerMaterial -> ByteString -> Property
+prop_invalidSignerIndex signer msg =
+  let pubNonce = unsafeRight $ publicNonce signer.signerSecNonce
       pubNonces = [pubNonce]
-      pubkeys = [pubkey]
-      aggNonce = fromJust $ aggNonces pubNonces
-      ctx = mkSessionContext aggNonce pubkeys [] msg
-      sig = sign secNonce secKey ctx
-      invalidIndex = 1 -- Out of bounds index (only 1 signer at index 0)
-      result = partialSigVerify sig pubNonces pubkeys [] msg invalidIndex
-   in expectFailure (result === True)
+      pubkeys = [signer.signerPubKey]
+      aggNonce = unsafeRight $ aggNonces pubNonces
+      ctx = unsafeRight $ mkSessionContext aggNonce pubkeys [] msg
+      sig = unsafeRight $ sign signer.signerSecNonce signer.signerSecKey ctx
+      result = partialSigVerify sig pubNonces pubkeys [] msg 1
+   in result === Left (InvalidSignerIndex 1)

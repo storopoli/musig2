@@ -2,13 +2,12 @@
 
 module AggPubkeys (testAggPubkeys) where
 
-import Control.Exception (ErrorCall (..), evaluate, try)
 import Crypto.Curve.Secp256k1 (Pub)
-import Crypto.Curve.Secp256k1.MuSig2 (Tweak (..), aggregatedPubkey, mkKeyAggContext)
+import Crypto.Curve.Secp256k1.MuSig2 (MuSig2Error (..), Tweak (..), aggregatedPubkey, mkKeyAggContext)
 import Data.ByteString (ByteString)
 import Test.Tasty
 import Test.Tasty.HUnit
-import Util (decodeHex, extractXOnly, parsePoint)
+import Util (decodeHex, extractXOnly, parsePoint, unsafeRight)
 
 -- | Input public keys from BIP-0327 test vectors
 inputPubkeys :: [Pub]
@@ -40,11 +39,14 @@ tweaks =
   , 0x252E4BD67410A76CDF933D30EAA1608214037F1B105A013ECCD3C5C184A6110B -- tweak that causes infinity
   ]
 
--- | Error test cases: (key indices, tweak index, is_xonly, expected error message).
-errorTestVectors :: [([Int], Int, Bool, String)]
+invalidTweakOutOfRange :: Integer
+invalidTweakOutOfRange = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
+-- | Error test cases: (key indices, tweak index, is_xonly, expected error).
+errorTestVectors :: [([Int], Int, Bool, MuSig2Error)]
 errorTestVectors =
-  [ ([0, 1], 0, True, "tweak must be less than curve order") -- Tweak is out of range
-  , ([6], 1, False, "result of tweaking cannot be infinity") -- Intermediate tweaking result is point at infinity
+  [ ([0, 1], 0, True, TweakOutOfRange invalidTweakOutOfRange)
+  , ([6], 1, False, TweakResultAtInfinity)
   ]
 
 -- | Creates test case from vector data.
@@ -54,28 +56,20 @@ makeTestCase i (indices, expected) =
     extractXOnly aggPk @=? expected
  where
   selectedKeys = map (inputPubkeys !!) indices
-  keyAggCtx = mkKeyAggContext selectedKeys Nothing
+  keyAggCtx = unsafeRight $ mkKeyAggContext selectedKeys Nothing
   aggPk = aggregatedPubkey keyAggCtx
 
 -- | Creates error test case from vector data.
-makeErrorTestCase :: Int -> ([Int], Int, Bool, String) -> TestTree
+makeErrorTestCase :: Int -> ([Int], Int, Bool, MuSig2Error) -> TestTree
 makeErrorTestCase i (keyIndices, tweakIndex, isXOnly, expectedMsg) =
   testCase ("BIP-0327 error test vector " <> show (i + 1)) $ do
-    result <- try $ evaluate $ mkKeyAggContext selectedKeys (Just tweak)
-    case result of
-      Left (ErrorCall msg) -> assertBool ("Expected '" <> expectedMsg <> "' in error message, got: " <> msg) (expectedMsg `isSubsequenceOf` msg)
+    case mkKeyAggContext selectedKeys (Just tweak) of
+      Left err -> err @?= expectedMsg
       Right _ -> assertFailure "Expected error but got success"
  where
   selectedKeys = map (inputPubkeys !!) keyIndices
   tweakVal = tweaks !! tweakIndex
   tweak = if isXOnly then XOnlyTweak tweakVal else PlainTweak tweakVal
-
-  isSubsequenceOf :: String -> String -> Bool
-  isSubsequenceOf [] _ = True
-  isSubsequenceOf _ [] = False
-  isSubsequenceOf (x : xs) (y : ys)
-    | x == y = isSubsequenceOf xs ys
-    | otherwise = isSubsequenceOf (x : xs) ys
 
 -- | Test vectors from [BIP-0327 `key_agg_vectors.json`](https://github.com/bitcoin/bips/blob/master/bip-0327/vectors/key_agg_vectors.json).
 testAggPubkeys :: TestTree
