@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0 (2026-04-10)
+
+* Security hardening and API changes:
+  - Bind `SecNonce` values to the originating signer public key and reject nonce/key mismatches during signing
+  - Replace panic-based validation in signing, verification, context creation, tweaking, and nonce generation with structured `MuSig2Error` results
+  - Make `SecNonce` opaque and require checked construction via `mkSecNonce` or the nonce generation APIs
+  - Reject out-of-range partial signatures during `aggPartials` instead of reducing them modulo the curve order
+  - Update nonce generation and session construction APIs to return checked `Either` results
+  - Refresh tests and documentation to cover the new checked API and regression cases
+
 ## 0.1.3 (2026-01-04)
 
 * Performance improvements:
