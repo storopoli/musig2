@@ -42,7 +42,7 @@ jobs:
           echo "$(brew --prefix llvm@15)/bin" >> $GITHUB_PATH
 
       - name: Setup Haskell
-        uses: haskell-actions/setup@f9150cb1d140e9a9271700670baa38991e6fa25c # v2.10.3
+        uses: haskell-actions/setup@cd0d9bdd65b20557f41bea4dbe43d0b5fbbfe553 # v2.11.0
         id: setup
         with:
           ghc-version: ${{ matrix.ghc }}
@@ -97,7 +97,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Haskell
-        uses: haskell-actions/setup@f9150cb1d140e9a9271700670baa38991e6fa25c # v2.10.3
+        uses: haskell-actions/setup@cd0d9bdd65b20557f41bea4dbe43d0b5fbbfe553 # v2.11.0
         id: setup-cabal-fmt
         with:
           ghc-version: '9.8'
