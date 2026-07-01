@@ -77,7 +77,7 @@ jobs:
           persist-credentials: false
 
       - name: Run Fourmolu
-        uses: haskell-actions/run-fourmolu@015e6ed9db2b3f344482792d42b7317c764eb30f # v12
+        uses: haskell-actions/run-fourmolu@1b9df64b784203126500372730b9725c97e4040b # v13
         with:
           pattern: |
             lib/**/*.hs
