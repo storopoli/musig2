@@ -22,8 +22,11 @@
   - Drop the unused `ppad-hmac-drbg` and `base16-bytestring` library dependencies
   - Tested with GHC 9.8.4, 9.10.3, 9.12.4 and 9.14.1
 * Tests, benchmarks and CI:
-  - Add regression tests from the official BIP-0327 vectors and the reference
-    implementation; the tweak vector tests now compare exact partial signatures
+  - Run the official BIP-0327 test vectors from the upstream JSON files
+    (pinned and checksummed) instead of hand-copied subsets, with exact-output
+    assertions; vectors the API cannot express yet are listed explicitly
+  - Add regression tests for the fixed bugs, using the reference implementation
+    for cases the official vectors do not cover
   - Fix the benchmark suite build and build it in CI
   - Run Linux CI jobs on `ubuntu-24.04` so LLVM jobs can install `llvm-15`
 
