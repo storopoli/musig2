@@ -20,17 +20,21 @@ Pure [BIP0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
 
 == Security Considerations
 
-* __Nonce single-use:__ Each 'SecNonce' /must/ be used to 'sign' at most one
-  message. Reusing a nonce across two different messages enables algebraic
-  recovery of the signer's private key. This library does not enforce
-  single-use semantics at the type level; callers must ensure fresh nonces
-  per signing session.
+* __Nonce single-use:__ Each 'SecNonce' /must/ be used to 'sign' at most once.
+  Signing more than once with the same 'SecNonce', in any sessions, lets other
+  signers recover your secret key. This library does not enforce single-use
+  semantics: 'sign' is pure and 'mkSecNonce' / 'secNonceGenWithRand' rebuild a
+  nonce from its inputs. Never persist, copy or regenerate a 'SecNonce'; get a
+  fresh one from 'secNonceGen' for every signing session, and never retry
+  'sign' with a nonce after a failure.
 
-* __Non-constant-time arithmetic:__ This library uses Haskell's arbitrary-precision
-  'Integer' type for all scalar operations. Branching and comparison on secret
-  values (e.g., key negation during signing) is not constant-time. For
-  applications requiring side-channel resistance, consider a C FFI binding
-  such as @libsecp256k1-musig@.
+* __Non-constant-time arithmetic:__ Elliptic curve multiplications on secrets
+  are constant-time (they are done by @ppad-secp256k1@), but the scalar
+  arithmetic on secret keys and nonces (e.g. \(k_1 + b k_2\) and
+  \(k + e a d\) in 'sign', and the reductions in nonce generation) uses
+  Haskell's arbitrary-precision 'Integer', whose running time depends on the
+  values. An attacker able to measure timings or caches on the same machine may
+  learn information about secrets.
 
 * __No secret zeroization:__ Secret key material ('SecKey', 'SecNonce') is not
   zeroized after use due to Haskell's garbage-collected runtime. Secrets may
@@ -41,10 +45,7 @@ Pure [BIP0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)
 A sample GHCi session:
 
 @
-> -- pragmas and b16 import for illustration only; not required
 > :set -XOverloadedStrings
-> :set -XBangPatterns
-> import qualified Data.ByteString.Base16 as B16
 >
 > -- import qualified
 > import qualified Crypto.Curve.Secp256k1.MuSig2 as MuSig2
@@ -89,7 +90,7 @@ A sample GHCi session:
 >
 > -- verify the aggregated signature
 > Secp256k1.verify_schnorr msg agg_pk final_sig
-> True
+True
 @
 -}
 module Crypto.Curve.Secp256k1.MuSig2 (
@@ -126,13 +127,9 @@ module Crypto.Curve.Secp256k1.MuSig2 (
 import Control.Monad (foldM, when)
 import Crypto.Curve.Secp256k1 (Projective, Pub, add, derive_pub, mul, neg, serialize_point, _CURVE_G, _CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2.Internal
-import Data.Binary.Put (
-  putWord32be,
-  putWord64be,
-  runPut,
- )
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import Data.ByteString.Builder (toLazyByteString, word32BE, word64BE)
 import qualified Data.ByteString.Lazy as LBS
 import Data.Foldable (toList, traverse_)
 import Data.Maybe (fromMaybe)
@@ -143,6 +140,7 @@ import Data.Word (Word32, Word64, Word8)
 import GHC.Generics (Generic)
 import System.Entropy (getEntropy)
 
+-- | Errors returned by the functions in this module.
 data MuSig2Error
   = EmptyPartialSignatureCollection
   | EmptyNonceCollection
@@ -236,6 +234,10 @@ and aggregation.
 Fails with 'SecretKeyPublicKeyMismatch' if the public key derived from the
 secret key differs from the one the 'SecNonce' is bound to, or is not one of
 the session's public keys.
+
+The partial signature is verified before it is returned, as recommended by
+BIP-0327; a failure is reported as 'PublicNonceGenerationFailed'. Do not retry
+'sign' with the same 'SecNonce' after any failure.
 -}
 sign ::
   -- | Secret nonce.
@@ -458,9 +460,10 @@ using 'sortPublicKeys' before creating a 'SessionContext'.
 
 == NOTE
 
-Internally it validates if all keys, the resulting aggregated key, and the
-aggregated public nonce are not points at infinity, if the tweaks are within the
-curve order, and if the length of the collection of keys is not bigger than 32 bits.
+Internally it validates if all keys and the resulting aggregated key are not
+points at infinity, if the tweaks are within the curve order, and if the length
+of the collection of keys is not bigger than 32 bits. The aggregated public
+nonce may contain the point at infinity, as allowed by BIP-0327.
 -}
 mkSessionContext ::
   (Traversable t) =>
@@ -552,6 +555,12 @@ getTweak :: Tweak -> Integer
 getTweak (XOnlyTweak int) = int
 getTweak (PlainTweak int) = int
 
+{- | Applies a 'Tweak' to a 'KeyAggContext', following ApplyTweak in
+[BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+
+Fails if the tweak is not in the range \(0 \leq t < n\), where \(n\) is the
+curve order, or if the tweaked public key is the point at infinity.
+-}
 applyTweak :: KeyAggContext -> Tweak -> Either MuSig2Error KeyAggContext
 applyTweak ctx newTweak = do
   let pubkey = q ctx
@@ -651,7 +660,7 @@ data SecNonceGenParams = SecNonceGenParams
   , _msg :: Maybe ByteString
   -- ^ Message: optional.
   , _extraIn :: Maybe ByteString
-  -- Auxiliary input: optional.
+  -- ^ Auxiliary input: optional.
   }
   deriving (Eq, Ord, Generic)
 
@@ -695,6 +704,11 @@ algorithms from
 
 You should probably use 'secNonceGen'.
 Use this function if you really have a randomly-generated 'ByteString'.
+
+This function is deterministic: the same random bytes and parameters always
+produce the same 'SecNonce'. Calling it again with the same bytes, for example
+to "restore" a nonce, reuses that nonce and can leak your secret key. The
+random bytes must be fresh, uniformly random, and used only once.
 -}
 secNonceGenWithRand :: ByteString -> SecNonceGenParams -> Either MuSig2Error SecNonce
 secNonceGenWithRand rand _params@(SecNonceGenParams{_pk = pkPoint, ..}) = do
@@ -727,7 +741,7 @@ secNonceGenWithRand rand _params@(SecNonceGenParams{_pk = pkPoint, ..}) = do
       Nothing -> BS.singleton 0
       Just m ->
         let len = fromIntegral (BS.length m) :: Word64
-            lenBytes = LBS.toStrict . runPut $ putWord64be len
+            lenBytes = LBS.toStrict . toLazyByteString $ word64BE len
          in BS.singleton 1 `BS.append` lenBytes `BS.append` m
     extraInBytes = fromMaybe "" _extraIn
 
@@ -740,7 +754,7 @@ secNonceGenWithRand rand _params@(SecNonceGenParams{_pk = pkPoint, ..}) = do
         `BS.append` (BS.singleton . fromIntegral $ BS.length aggpkBytes)
         `BS.append` aggpkBytes
         `BS.append` msgPrefixed
-        `BS.append` (LBS.toStrict . runPut . putWord32be . fromIntegral $ BS.length extraInBytes)
+        `BS.append` (LBS.toStrict . toLazyByteString . word32BE . fromIntegral $ BS.length extraInBytes)
         `BS.append` extraInBytes
         `BS.append` BS.singleton i
 

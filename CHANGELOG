@@ -4,6 +4,19 @@
 
 * Drop support for GHC 9.8 (`base >= 4.20`); tested with GHC 9.10.3, 9.12.4
   and 9.14.1
+* Security hardening:
+  - Require `entropy >= 0.4.1.6`, which waits for the kernel entropy pool
+    (`getrandom`) instead of reading `/dev/urandom` early at boot
+  - Require `ppad-sha256 >= 0.3.5`, which no longer crashes on aarch64 CPUs
+    without SHA2 instructions
+  - Under the `llvm` flag on x86_64, disable LLVM's cmov-to-branch conversion
+    (`-optlc=-x86-cmov-converter=false`), as `ppad-secp256k1` does
+  - Drop the `binary` dependency
+  - Correct the security documentation: nonce reuse in any session leaks the
+    secret key, `secNonceGenWithRand` is deterministic, and the variable-time
+    code is the `Integer` scalar arithmetic, not the curve operations
+* Fix the README and module examples, which imported a module from a package
+  that is no longer a dependency
 
 ## 0.2.1 (2026-11-12)
 

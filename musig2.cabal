@@ -35,16 +35,20 @@ library
   if flag(llvm)
     ghc-options: -fllvm -O2
 
+    -- Keep LLVM from turning constant-time selects back into branches, as
+    -- ppad-secp256k1 does for code that inlines ppad-fixed primitives.
+    if arch(x86_64)
+      ghc-options: -optlc=-x86-cmov-converter=false
+
   exposed-modules:  Crypto.Curve.Secp256k1.MuSig2
   other-modules:    Crypto.Curve.Secp256k1.MuSig2.Internal
   build-depends:
-    , base            >=4.20   && <5
-    , binary          >=0.8    && <0.9
-    , bytestring      >=0.9    && <0.13
-    , containers      >=0.6    && <0.9
-    , entropy         >=0.4    && <0.5
-    , ppad-secp256k1  >=0.5.10 && <0.6
-    , ppad-sha256     >=0.3.2  && <0.4
+    , base            >=4.20    && <5
+    , bytestring      >=0.11    && <0.13
+    , containers      >=0.6     && <0.9
+    , entropy         >=0.4.1.6 && <0.5
+    , ppad-secp256k1  >=0.5.10  && <0.6
+    , ppad-sha256     >=0.3.5   && <0.4
 
 test-suite musig2-tests
   type:             exitcode-stdio-1.0
@@ -72,11 +76,15 @@ test-suite musig2-tests
   if flag(llvm)
     ghc-options: -fllvm -O2
 
+    -- Keep LLVM from turning constant-time selects back into branches, as
+    -- ppad-secp256k1 does for code that inlines ppad-fixed primitives.
+    if arch(x86_64)
+      ghc-options: -optlc=-x86-cmov-converter=false
+
   build-depends:
     , aeson              >=2.0  && <2.4
     , base               >=4.20 && <5
     , base16-bytestring
-    , binary
     , bytestring
     , containers
     , directory
@@ -97,6 +105,9 @@ benchmark musig2-bench
 
   if flag(llvm)
     ghc-options: -fllvm
+
+    if arch(x86_64)
+      ghc-options: -optlc=-x86-cmov-converter=false
 
   build-depends:
     , base               >=4.20 && <5
