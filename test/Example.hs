@@ -72,8 +72,9 @@ example = do
   let session = MuSig2.newSession keyAggCtx (MuSig2.nonceAgg (pubNonce1 :| [received])) msg
 
   -- Each signer signs once with its nonce and publishes its partial signature.
-  psig1 <- orThrow (MuSig2.sign secNonce1 sk1 session)
-  psig2 <- orThrow (MuSig2.sign secNonce2 sk2 session)
+  -- 'sign' consumes the secret nonce: signing again with it fails.
+  psig1 <- MuSig2.sign secNonce1 sk1 session >>= orThrow
+  psig2 <- MuSig2.sign secNonce2 sk2 session >>= orThrow
 
   -- The aggregator checks each partial signature, then aggregates them.
   let valid =
@@ -110,7 +111,7 @@ taprootExample = do
 
   -- Sessions are opened on the tweaked context: the tweak lives in the context only.
   let session = MuSig2.newSession output (MuSig2.nonceAgg (fmap snd nonces)) sighash
-  psigs <- traverse orThrow (NE.zipWith (\sk (secNonce, _) -> MuSig2.sign secNonce sk session) sks nonces)
+  psigs <- traverse (\(sk, (secNonce, _)) -> MuSig2.sign secNonce sk session >>= orThrow) (NE.zip sks nonces)
   let signature = MuSig2.partialSigAgg session psigs
   pure (MuSig2.verify outputKey sighash signature)
 

@@ -65,7 +65,10 @@ instance Exception KeyAggError
 instance NFData KeyAggError where
   rnf = rwhnf
 
--- | Invalid inputs to nonce generation.
+{- | Nonce generation failures. 'Crypto.Curve.Secp256k1.MuSig2.nonceGen'
+fails only for invalid inputs; the last two constructors come from the
+functions of "Crypto.Curve.Secp256k1.MuSig2.Unsafe".
+-}
 data NonceGenError
   = -- | The optional secret key does not belong to the signer's public key.
     NonceSecKeyMismatch
@@ -75,6 +78,13 @@ data NonceGenError
     'Data.ByteString.ByteString' cannot be that long on 64-bit platforms).
     -}
     NonceMessageTooLong
+  | -- | The random bytes are not 32 bytes long; carries the actual length.
+    InvalidRandLength !Int
+  | {- | A derived nonce scalar is zero, so no nonce exists for these inputs.
+    Happens with negligible probability (a hash would have to be \(0\) or
+    \(n\)); 'Crypto.Curve.Secp256k1.MuSig2.nonceGen' draws again instead.
+    -}
+    NonceIsZero
   deriving (Eq, Show)
 
 instance Exception NonceGenError
@@ -82,18 +92,41 @@ instance Exception NonceGenError
 instance NFData NonceGenError where
   rnf = rwhnf
 
-{- | Signing failures. After any of them, discard the secret nonce: never try
-to sign again with it.
+{- | Signing failures.
+
+'Crypto.Curve.Secp256k1.MuSig2.sign' consumes the secret nonce before any
+check, so after any of these errors the nonce is used up: generate a new one
+and start again from the first round.
 -}
 data SignError
-  = -- | The secret nonce was generated for a different public key than the secret key's.
+  = -- | The secret nonce was already used, by an earlier 'Crypto.Curve.Secp256k1.MuSig2.sign' or an export.
+    SecNonceAlreadyUsed
+  | -- | The secret nonce was generated for a different public key than the secret key's.
     SecNonceKeyMismatch
+  | {- | The secret nonce was generated with an aggregate public key or a
+    message (in 'Crypto.Curve.Secp256k1.MuSig2.NonceInputs') that differs
+    from the session's 'Crypto.Curve.Secp256k1.MuSig2.aggXOnlyPubKey' or
+    message.
+    -}
+    SecNonceSessionMismatch
   | -- | The secret key's public key is not one of the session's public keys.
     SignerNotInSession
   | {- | The partial signature did not pass verification before being returned
-    (a bug or a fault, e.g. a bit flip). Never retry with the same nonce.
+    (a bug or a fault, e.g. a bit flip).
     -}
     SelfVerificationFailed
+  | -- | 'Crypto.Curve.Secp256k1.MuSig2.deterministicSign': the auxiliary randomness is not 32 bytes long; carries the actual length.
+    InvalidAuxRandLength !Int
+  | {- | 'Crypto.Curve.Secp256k1.MuSig2.deterministicSign': a derived nonce
+    scalar is zero. Happens with negligible probability (a hash would have to
+    be \(0\) or \(n\)).
+    -}
+    DeterministicNonceIsZero
+  | {- | 'Crypto.Curve.Secp256k1.MuSig2.deterministicSign': a half of the other
+    signers' aggregate nonce is the point at infinity. BIP-327 parses it as a
+    public nonce, so it rejects this and blames the nonce aggregator.
+    -}
+    AggOtherNonceAtInfinity
   deriving (Eq, Show)
 
 instance Exception SignError

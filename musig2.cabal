@@ -59,12 +59,16 @@ common implementation
 -- re-exports: cabal does not link the Haddock interface of a sublibrary.
 library
   import:          llvm, implementation
-  exposed-modules: Crypto.Curve.Secp256k1.MuSig2
+  exposed-modules:
+    Crypto.Curve.Secp256k1.MuSig2
+    Crypto.Curve.Secp256k1.MuSig2.Unsafe
+
   other-modules:
     Crypto.Curve.Secp256k1.MuSig2.Internal.Error
     Crypto.Curve.Secp256k1.MuSig2.Internal.Hash
     Crypto.Curve.Secp256k1.MuSig2.Internal.KeyAgg
     Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce
+    Crypto.Curve.Secp256k1.MuSig2.Internal.OneShot
     Crypto.Curve.Secp256k1.MuSig2.Internal.Point
     Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar
     Crypto.Curve.Secp256k1.MuSig2.Internal.Session
@@ -82,10 +86,12 @@ library internal
     Crypto.Curve.Secp256k1.MuSig2.Internal.Hash
     Crypto.Curve.Secp256k1.MuSig2.Internal.KeyAgg
     Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce
+    Crypto.Curve.Secp256k1.MuSig2.Internal.OneShot
     Crypto.Curve.Secp256k1.MuSig2.Internal.Point
     Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar
     Crypto.Curve.Secp256k1.MuSig2.Internal.Session
     Crypto.Curve.Secp256k1.MuSig2.Internal.Types
+    Crypto.Curve.Secp256k1.MuSig2.Unsafe
 
 test-suite musig2-tests
   import:           llvm
@@ -99,12 +105,13 @@ test-suite musig2-tests
     Encoding
     Example
     Generators
+    NonceSafety
     OfficialVectors
     Properties
     SignVerify
     Util
 
-  ghc-options:      -rtsopts -Wall
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-N -Wall
   build-depends:
     , aeson              >=2.0  && <2.4
     , base               >=4.20 && <5

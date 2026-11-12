@@ -16,7 +16,8 @@ Schnorr signature for their aggregate public key, in two rounds.
 2. Round one: each signer runs 'nonceGen' and sends its t'PubNonce' to the
    others (or to a coordinator), who aggregate them with 'nonceAgg'.
 3. Round two: everyone opens the same 'Session' with 'newSession'; each signer
-   runs 'sign' once and sends its 'PartialSignature'.
+   runs 'sign' once (it consumes the secret nonce) and sends its
+   'PartialSignature'.
 4. The aggregator checks each partial signature with 'partialSigVerify' and
    combines them with 'partialSigAgg'. Anyone can check the result with
    'verify' against 'aggXOnlyPubKey'.
@@ -27,13 +28,27 @@ is valid by construction.
 
 == Security considerations
 
-* __Use each nonce once.__ Signing twice with the same t'SecNonce', in any
-  sessions, lets the other signers compute your secret key. t'SecNonce' cannot
-  be encoded, shown, compared or rebuilt from its parts, and 'nonceGen'
-  always draws fresh randomness, but this version does not stop you from
-  keeping a t'SecNonce' value and passing it to 'sign' twice: 'sign' is pure.
-  Generate a new nonce for every session, drop it after 'sign', and never
-  sign again with a nonce after a 'SignError'.
+* __Each nonce signs once.__ Signing twice with the same secret nonce, in
+  any two sessions, lets the other signers compute your secret key. A
+  t'SecNonce' from 'nonceGen' is one-shot: 'sign' atomically marks it used
+  before doing anything else, so a second 'sign' with it (or with any copy
+  of it, from any thread) returns 'SecNonceAlreadyUsed'. A failed 'sign'
+  uses the nonce up too: after any 'SignError', generate a new nonce and
+  start again from round one. t'SecNonce' cannot be encoded, shown, compared
+  or rebuilt from its parts, and 'nonceGen' always draws fresh randomness.
+  "Crypto.Curve.Secp256k1.MuSig2.Unsafe" has the escape hatches
+  (caller-supplied randomness, counters, export and import of secret nonces)
+  that this protection cannot cover.
+
+* __Bind nonces to the session when you can.__ If the aggregate key or the
+  message is known in round one, pass them to 'nonceGen' (see
+  t'NonceInputs'): 'sign' then refuses any other session
+  ('SecNonceSessionMismatch'), and they add protection should the random
+  number generator fail.
+
+* __Signers without randomness__ can use 'deterministicSign' (BIP-327
+  @DeterministicSign@) if they are the last to send their public nonce, after
+  receiving everyone else's.
 
 * __Verify partial signatures.__ 'partialSigAgg' does not check its inputs;
   run 'partialSigVerify' on every partial signature you did not make, so a
@@ -48,9 +63,12 @@ is valid by construction.
   values. An attacker able to measure timings or caches on the same machine
   may learn information about secrets.
 
-* __No secret zeroization.__ Secret keys and nonces are not zeroized after
-  use: Haskell's garbage collector may copy them and keeps them in memory
-  until they are collected.
+* __Zeroization is best-effort.__ The scalars of a t'SecNonce' live in a
+  pinned buffer (which the garbage collector never copies) that 'sign'
+  zero-fills when it consumes the nonce. Everything else is an ordinary
+  Haskell value that is not wiped and may be copied by the garbage collector:
+  secret keys, the intermediate values computed from the nonce while
+  signing, and the buffer of a nonce that is dropped without being used.
 
 * __Randomness.__ 'nonceGen' reads 32 bytes from the operating system's
   random number generator (@getrandom@ on Linux, via the @entropy@ package).
@@ -97,8 +115,9 @@ the @OverloadedStrings@ language extension):
 >   let session = MuSig2.newSession keyAggCtx (MuSig2.nonceAgg (pubNonce1 :| [received])) msg
 >
 >   -- Each signer signs once with its nonce and publishes its partial signature.
->   psig1 <- orThrow (MuSig2.sign secNonce1 sk1 session)
->   psig2 <- orThrow (MuSig2.sign secNonce2 sk2 session)
+>   -- 'sign' consumes the secret nonce: signing again with it fails.
+>   psig1 <- MuSig2.sign secNonce1 sk1 session >>= orThrow
+>   psig2 <- MuSig2.sign secNonce2 sk2 session >>= orThrow
 >
 >   -- The aggregator checks each partial signature, then aggregates them.
 >   let valid =
@@ -137,7 +156,7 @@ A Taproot output key is the aggregate key tweaked with 'applyTaprootTweak':
 >
 >   -- Sessions are opened on the tweaked context: the tweak lives in the context only.
 >   let session = MuSig2.newSession output (MuSig2.nonceAgg (fmap snd nonces)) sighash
->   psigs <- traverse orThrow (NE.zipWith (\sk (secNonce, _) -> MuSig2.sign secNonce sk session) sks nonces)
+>   psigs <- traverse (\(sk, (secNonce, _)) -> MuSig2.sign secNonce sk session >>= orThrow) (NE.zip sks nonces)
 >   let signature = MuSig2.partialSigAgg session psigs
 >   pure (MuSig2.verify outputKey sighash signature)
 -}
@@ -187,6 +206,7 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   sessionKeyAgg,
   PartialSignature,
   sign,
+  deterministicSign,
   partialSigVerify,
   partialSigAgg,
   Signature,
@@ -213,7 +233,7 @@ import Crypto.Curve.Secp256k1.MuSig2.Internal.KeyAgg (
   signerIndex,
  )
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (NonceInputs (..), SecNonce, noNonceInputs, nonceAgg, nonceGen)
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Session (Session, newSession, partialSigAgg, partialSigVerify, sessionKeyAgg, sign, verify)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Session (Session, deterministicSign, newSession, partialSigAgg, partialSigVerify, sessionKeyAgg, sign, verify)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Types (
   AggNonce,
   Encode (..),

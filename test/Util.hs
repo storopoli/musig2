@@ -8,6 +8,7 @@ module Util (
   tweakFromInt,
   psigFromInt,
   secNonceFromInts,
+  failsWith,
   decodeEach,
   isOnCurveX,
 ) where
@@ -20,6 +21,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BC
 import Data.Char (toUpper)
+import Test.Tasty.HUnit (Assertion, (@?=))
 
 -- | Decodes hex; fails the test on invalid input.
 decodeHex :: ByteString -> ByteString
@@ -45,8 +47,9 @@ tweakFromInt = unsafeRight . decode . integerToBytes32
 psigFromInt :: Integer -> PartialSignature
 psigFromInt = unsafeRight . decode . integerToBytes32
 
-secNonceFromInts :: Integer -> Integer -> PubKey -> SecNonce
-secNonceFromInts k1 k2 = unsafeRight . secNonceFromScalars k1 k2
+-- | A fresh secret nonce from its scalars; fails the test if they are out of range.
+secNonceFromInts :: Integer -> Integer -> PubKey -> IO SecNonce
+secNonceFromInts k1 k2 pk = unsafeRight <$> secNonceFromScalars k1 k2 pk
 
 {- | Decodes each byte string in order; the first failure comes with its
 position, as BIP-327 blames the signer who sent it.
@@ -62,3 +65,7 @@ isOnCurveX x = x < fieldSize && powMod (x * x * x + 7) ((fieldSize - 1) `div` 2)
    where
     go _ 0 acc = acc
     go base k acc = go (base * base `mod` m) (k `div` 2) (if odd k then acc * base `mod` m else acc)
+
+-- | Runs an action that must fail with exactly the given error.
+failsWith :: (Eq e, Show e) => e -> IO (Either e a) -> Assertion
+failsWith expected action = action >>= \result -> either Just (const Nothing) result @?= Just expected

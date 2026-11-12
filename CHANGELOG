@@ -38,14 +38,37 @@ names to the new ones.
     with `NonceInputs` (`nonceSecKey`, `nonceAggPubKey` (x-only, as in
     BIP-0327), `nonceMessage`, `nonceExtraInput`) and `noNonceInputs`
   - `mkSecNonce` and `secNonceGenWithRand` removed from the public API:
-    secret nonces only come from `nonceGen`
+    secret nonces come from `nonceGen` (or, deliberately, from the new
+    `Crypto.Curve.Secp256k1.MuSig2.Unsafe` module)
+  - `SecNonce` is one-shot: its scalars live in a pinned buffer with an
+    atomic used flag. `sign :: SecNonce -> SecKey -> Session -> IO (Either SignError PartialSignature)`
+    consumes the nonce before any check (as BIP-0327's reference code and
+    libsecp256k1 do) and zero-fills the buffer; any later `sign` with it,
+    through any copy and from any thread, returns `SecNonceAlreadyUsed`.
+    A failed `sign` consumes the nonce too.
+  - Nonces generated with `nonceAggPubKey` or `nonceMessage` are bound to
+    them: `sign` returns `SecNonceSessionMismatch` for a session with
+    another aggregate key or message
+  - New `deterministicSign :: SecKey -> AggNonce -> KeyAggContext -> ByteString -> Maybe ByteString -> Either SignError (PubNonce, PartialSignature)`
+    (BIP-0327 `DeterministicSign`) for a signer without randomness that sends
+    its nonce last
+  - New module `Crypto.Curve.Secp256k1.MuSig2.Unsafe` with
+    `nonceGenWithRand` (caller-supplied randomness), `nonceGenCounter`
+    (libsecp256k1's `musig_nonce_gen_counter`), `secNonceToBytes` (BIP-0327
+    97-byte encoding; consumes the nonce), `secNonceFromBytes` and
+    `signWithoutVerification`
+  - `NonceGenError` gains `InvalidRandLength` and `NonceIsZero` (from the
+    `Unsafe` generators only); `SignError` gains `SecNonceAlreadyUsed`,
+    `SecNonceSessionMismatch`, and, for `deterministicSign`,
+    `InvalidAuxRandLength`, `DeterministicNonceIsZero` and
+    `AggOtherNonceAtInfinity`
   - `aggNonces` -> `nonceAgg :: NonEmpty PubNonce -> AggNonce` (total);
     aggregate nonces have their own type, `AggNonce`, whose points may be
     infinity
   - `SessionContext(..)` and `mkSessionContext aggNonce pks tweaks msg` ->
     opaque `Session` from `newSession :: KeyAggContext -> AggNonce -> ByteString -> Session`
     (total), which computes the session values once; `sessionKeyAgg`
-  - `sign` now returns `Either SignError PartialSignature`;
+  - `sign` now returns `IO (Either SignError PartialSignature)`;
     `PartialSignature` is opaque instead of `Integer`
   - `partialSigVerify psig nonces pks tweaks msg i` ->
     `partialSigVerify :: Session -> PubKey -> PubNonce -> PartialSignature -> Bool`,
@@ -76,8 +99,11 @@ names to the new ones.
   - The implementation lives in a private `internal` library used by the
     tests and benchmarks
   - The README and module examples are compiled and run by the test suite
-  - Tests: official BIP-0327 vectors for invalid encodings now run, checking
-    that decoding fails for exactly the contribution the vector blames;
+  - Tests: official BIP-0327 vectors for invalid encodings and
+    `DeterministicSign` now run, checking that decoding fails for exactly the
+    contribution the vector blames; nonce reuse (sequential, through copies
+    and from many threads at once), session binding and zero-filling are
+    tested;
     property tests run complete multi-signer sessions with random plain,
     x-only and Taproot tweaks and check the final signature, and corrupt
     inputs to check that verification fails
