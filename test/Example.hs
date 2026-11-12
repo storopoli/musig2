@@ -4,10 +4,13 @@
 documentation, compiled and run by the test suite. Keep the three copies in
 sync.
 -}
-module Example (testExample, example, taprootExample) where
+module Example (testExample, example, taprootExample, coordinatorExample) where
 
 import Control.Exception (Exception, throwIO)
+import Control.Monad (foldM)
 import qualified Crypto.Curve.Secp256k1.MuSig2 as MuSig2
+import qualified Crypto.Curve.Secp256k1.MuSig2.Coordinator as Coordinator
+import Data.Bifunctor (first)
 import qualified Data.ByteString as BS
 import Data.List (isInfixOf)
 import Data.List.NonEmpty (NonEmpty (..))
@@ -21,24 +24,32 @@ testExample =
     "documentation examples"
     [ testCase "2-of-2 signing" (example >>= assertBool "signature verifies")
     , testCase "Taproot key-path spend" (taprootExample >>= assertBool "signature verifies")
+    , testCase "coordinator" (coordinatorExample >>= assertBool "signature verifies")
     , testCase "the README and the module documentation show this code verbatim" docsInSync
     ]
 
 {- | The code between the markers below must appear verbatim in README.md and,
 behind Haddock bird tracks, in the module header of
-"Crypto.Curve.Secp256k1.MuSig2".
+"Crypto.Curve.Secp256k1.MuSig2" (the first two examples) or
+"Crypto.Curve.Secp256k1.MuSig2.Coordinator" (the coordinator example).
 -}
 docsInSync :: Assertion
 docsInSync = do
   source <- readFile "test/Example.hs"
   readme <- readFile "README.md"
-  header <- readFile "lib/Crypto/Curve/Secp256k1/MuSig2.hs"
   let trim = dropWhile null . reverse . dropWhile null . reverse
       region from to = trim (takeWhile (/= to) (drop 1 (dropWhile (/= from) (lines source))))
-      blocks = [region "-- example start" "-- taproot start", region "-- taproot start" "-- example end"]
       bird l = if null l then ">" else "> " <> l
-  mapM_ (\b -> assertBool "README.md contains the example" (unlines b `isInfixOf` readme)) blocks
-  mapM_ (\b -> assertBool "the module header contains the example" (unlines (map bird b) `isInfixOf` header)) blocks
+      inHeader file b = do
+        header <- readFile file
+        assertBool (file <> " contains the example") (unlines (map bird b) `isInfixOf` header)
+      blocks =
+        [ (region "-- example start" "-- taproot start", "lib/Crypto/Curve/Secp256k1/MuSig2.hs")
+        , (region "-- taproot start" "-- coordinator start", "lib/Crypto/Curve/Secp256k1/MuSig2.hs")
+        , (region "-- coordinator start" "-- example end", "lib/Crypto/Curve/Secp256k1/MuSig2/Coordinator.hs")
+        ]
+  mapM_ (\(b, _) -> assertBool "README.md contains the example" (unlines b `isInfixOf` readme)) blocks
+  mapM_ (\(b, file) -> inHeader file b) blocks
 
 -- example start
 
@@ -114,5 +125,44 @@ taprootExample = do
   psigs <- traverse (\(sk, (secNonce, _)) -> MuSig2.sign secNonce sk session >>= orThrow) (NE.zip sks nonces)
   let signature = MuSig2.partialSigAgg session psigs
   pure (MuSig2.verify outputKey sighash signature)
+
+-- coordinator start
+
+-- | A coordinator collects three signers' nonces and partial signatures as bytes.
+coordinatorExample :: IO Bool
+coordinatorExample = do
+  sks <- traverse (orThrow . MuSig2.secKeyFromBytes . BS.replicate 32) (0x66 :| [0x77, 0x88])
+  -- Signer i is the one with the i-th public key of the context.
+  keyAggCtx <- orThrow (MuSig2.keyAgg (fmap MuSig2.secKeyPubKey sks))
+  let msg = "pay Carol 1 BTC"
+
+  -- Round one: each signer sends its encoded public nonce, in any order.
+  nonces <- traverse (\sk -> MuSig2.nonceGen (MuSig2.secKeyPubKey sk) MuSig2.noNonceInputs >>= orThrow) (NE.toList sks)
+  nonceRound <-
+    orThrow $
+      foldM
+        (\r (i, (_, pubNonce)) -> Coordinator.receivePubNonce i (MuSig2.encode pubNonce) r)
+        (Coordinator.newNonceRound keyAggCtx)
+        (zip [0 ..] nonces)
+  -- Fails if a nonce is missing (here reporting only the first such signer).
+  collected <- orThrow (first NE.head (Coordinator.finishNonceRound nonceRound))
+
+  -- The coordinator sends the aggregate nonce to every signer, who decodes it
+  -- and opens the session.
+  aggNonce <- orThrow (MuSig2.decode (MuSig2.encode (Coordinator.collectedAggNonce collected)))
+  let session = MuSig2.newSession keyAggCtx aggNonce msg
+
+  -- Round two: each signer sends its encoded partial signature. The
+  -- coordinator verifies each one and blames the signer of an invalid one.
+  psigs <- traverse (\(sk, (secNonce, _)) -> MuSig2.sign secNonce sk session >>= orThrow) (zip (NE.toList sks) nonces)
+  sigRound <-
+    orThrow $
+      foldM
+        (\r (i, psig) -> Coordinator.receivePartialSig i (MuSig2.encode psig) r)
+        (Coordinator.newSigRound collected msg)
+        (zip [0 ..] psigs)
+  -- Aggregates the partial signatures and verifies the result.
+  signature <- orThrow (Coordinator.finishSigRound sigRound)
+  pure (MuSig2.verify (MuSig2.aggXOnlyPubKey keyAggCtx) msg signature)
 
 -- example end

@@ -15,8 +15,11 @@ extra-doc-files:
   README.md
 
 extra-source-files:
+  scripts/gen-diff-corpus.py
   test/vectors/bip327/*.json
   test/vectors/bip327/README.md
+  test/vectors/diff/corpus.json
+  test/vectors/diff/README.md
 
 description:
   Pure BIP0327 MuSig2 (partial)signatures with tweak support on the elliptic curve secp256k1.
@@ -62,6 +65,7 @@ library
   import:          llvm, implementation
   exposed-modules:
     Crypto.Curve.Secp256k1.MuSig2
+    Crypto.Curve.Secp256k1.MuSig2.Coordinator
     Crypto.Curve.Secp256k1.MuSig2.Unsafe
 
   other-modules:
@@ -83,6 +87,7 @@ library internal
   visibility:      private
   exposed-modules:
     Crypto.Curve.Secp256k1.MuSig2
+    Crypto.Curve.Secp256k1.MuSig2.Coordinator
     Crypto.Curve.Secp256k1.MuSig2.Internal.Error
     Crypto.Curve.Secp256k1.MuSig2.Internal.Hash
     Crypto.Curve.Secp256k1.MuSig2.Internal.KeyAgg
@@ -103,6 +108,8 @@ test-suite musig2-tests
   other-modules:
     ApplyTweaks
     Bip327Regressions
+    CoordinatorRounds
+    DiffCorpus
     Encoding
     Example
     Generators
