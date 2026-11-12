@@ -97,6 +97,7 @@ test-suite musig2-tests
     ApplyTweaks
     Bip327Regressions
     Encoding
+    Example
     Generators
     OfficialVectors
     Properties
