@@ -114,7 +114,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cabal-fmt-
 
       - name: Install cabal-fmt
-        run: cabal install cabal-fmt-0.1.12 --ignore-project
+        run: cabal install cabal-fmt --ignore-project
 
       - name: Check cabal formatting
         run: |
