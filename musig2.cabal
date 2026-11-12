@@ -96,7 +96,10 @@ test-suite musig2-tests
   other-modules:
     ApplyTweaks
     Bip327Regressions
+    Encoding
+    Generators
     OfficialVectors
+    Properties
     SignVerify
     Util
 
