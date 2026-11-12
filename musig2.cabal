@@ -1,16 +1,20 @@
-cabal-version:   3.0
-name:            musig2
-version:         0.2.1
-synopsis:        MuSig2 library
-license:         MIT
-license-file:    LICENSE
-author:          Jose Storopoli
-maintainer:      jose@storopoli.com
-homepage:        https://github.com/storopoli/musig2
-category:        Cryptography
-build-type:      Simple
-tested-with:     GHC ==9.8.4 || ==9.10.3 || ==9.12.4 || ==9.14.1
-extra-doc-files: CHANGELOG
+cabal-version:      3.0
+name:               musig2
+version:            0.2.1
+synopsis:           MuSig2 library
+license:            MIT
+license-file:       LICENSE
+author:             Jose Storopoli
+maintainer:         jose@storopoli.com
+homepage:           https://github.com/storopoli/musig2
+category:           Cryptography
+build-type:         Simple
+tested-with:        GHC ==9.8.4 || ==9.10.3 || ==9.12.4 || ==9.14.1
+extra-doc-files:    CHANGELOG
+extra-source-files:
+  test/vectors/bip327/*.json
+  test/vectors/bip327/README.md
+
 description:
   Pure BIP0327 MuSig2 (partial)signatures with tweak support on the elliptic curve secp256k1.
 
@@ -48,24 +52,19 @@ test-suite musig2-tests
   hs-source-dirs:   test lib
   main-is:          Main.hs
   other-modules:
-    AggNonces
-    AggPartials
     AggPartialsProperty
-    AggPubkeys
     ApplyTweaks
     Bip327Regressions
     Crypto.Curve.Secp256k1.MuSig2
     Crypto.Curve.Secp256k1.MuSig2.Internal
     MonoidProjective
     MonoidPubNonce
-    NonceGen
     NonceGenProperty
+    OfficialVectors
     ParityPub
     SignVerify
     SignVerifyProperty
     SignVerifyTweakProperty
-    SortPubkeys
-    Tweak
     Util
 
   ghc-options:      -rtsopts -Wall
@@ -74,12 +73,15 @@ test-suite musig2-tests
     ghc-options: -fllvm -O2
 
   build-depends:
+    , aeson              >=2.0  && <2.4
     , base               >=4.19 && <5
     , base16-bytestring
     , binary
     , bytestring
     , containers
+    , directory
     , entropy
+    , filepath
     , ppad-secp256k1
     , ppad-sha256
     , tasty
