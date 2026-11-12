@@ -5,24 +5,21 @@
 vendored in @test\/vectors\/bip327@ (see the @README.md@ there for the
 upstream commit and checksums).
 
-Every case that the library can express is run with exact-output
-assertions. Invalid encodings are decoded with 'decode', contribution by
-contribution in the order the reference implementation parses them, and the
-first failure must be exactly the contribution (and signer) the vector
-blames. Cases that need something the library does not offer yet
-(DeterministicSign) are listed one by one in the
-\"Not expressible through the public API\" group, so the coverage gap is
-visible in the test output instead of being skipped silently.
+Every case runs with exact-output assertions. Invalid encodings are decoded
+with 'decode', contribution by contribution in the order the reference
+implementation parses them, and the first failure must be exactly the
+contribution (and signer) the vector blames.
 
 The parsers reject unknown fields, unknown error types and unknown error
 messages, so an updated vector file cannot be silently half-run.
 -}
 module OfficialVectors (officialVectorTests) where
 
-import Control.Monad (filterM, foldM, unless, void, zipWithM)
+import Control.Monad (filterM, foldM, unless, void, zipWithM, (>=>))
 import Crypto.Curve.Secp256k1.MuSig2
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (nonceGenWithRand, secNonceFromBytes, secNoncePubNonce, secNonceToBytes)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (secNoncePubNonce)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (bytesToInteger, curveOrder)
+import Crypto.Curve.Secp256k1.MuSig2.Unsafe (nonceGenWithRand, secNonceFromBytes, secNonceToBytes)
 import qualified Crypto.Hash.SHA256 as SHA256
 import Data.Aeson (FromJSON (..), Value, eitherDecodeFileStrict, withObject, (.:), (.:?))
 import qualified Data.Aeson.Key as Key
@@ -440,16 +437,50 @@ parseSigAgg = strictObject "sig_agg" ["pubkeys", "pnonces", "tweaks", "psigs", "
         <*> (if isError then Left <$> c .: "error" else Right <$> hexField c "expected")
         <*> c .:? "comment"
 
--- | Only the case comments are read: DeterministicSign is not implemented.
-data DetSignVectors = DetSignVectors [Maybe String] [Maybe String]
+data DetSignVectors = DetSignVectors
+  { dsSk :: ByteString
+  , dsPubkeys :: [ByteString]
+  , dsMsgs :: [ByteString]
+  , dsValid :: [DetSignCase]
+  , dsError :: [DetSignCase]
+  }
+
+-- | A det_sign case: valid cases carry the expected (pubnonce, psig), error cases carry @error@.
+data DetSignCase = DetSignCase
+  { dscRand :: Maybe ByteString
+  , dscAggOtherNonce :: ByteString
+  , dscKeys :: [Int]
+  , dscTweaks :: [ByteString]
+  , dscXOnly :: [Bool]
+  , dscMsg :: Int
+  , dscSigner :: Int
+  , dscOutcome :: Either VectorError (ByteString, ByteString)
+  , dscComment :: Maybe String
+  }
 
 parseDetSign :: Value -> Parser DetSignVectors
 parseDetSign = strictObject "det_sign" ["sk", "pubkeys", "msgs", "valid_test_cases", "error_test_cases"] $ \o ->
   DetSignVectors
-    <$> (o .: "valid_test_cases" >>= traverse comment)
-    <*> (o .: "error_test_cases" >>= traverse comment)
+    <$> hexField o "sk"
+    <*> hexList o "pubkeys"
+    <*> hexList o "msgs"
+    <*> (o .: "valid_test_cases" >>= traverse (detSignCase False))
+    <*> (o .: "error_test_cases" >>= traverse (detSignCase True))
  where
-  comment = withObject "det_sign case" (.:? "comment")
+  detSignCase isError =
+    strictObject "det_sign case" ["rand", "aggothernonce", "key_indices", "tweaks", "is_xonly", "msg_index", "signer_index", if isError then "error" else "expected", "comment"] $ \c ->
+      DetSignCase
+        <$> nullableHexField c "rand"
+        <*> hexField c "aggothernonce"
+        <*> c .: "key_indices"
+        <*> hexList c "tweaks"
+        <*> c .: "is_xonly"
+        <*> c .: "msg_index"
+        <*> c .: "signer_index"
+        <*> (if isError then Left <$> c .: "error" else Right <$> (hexList c "expected" >>= pair))
+        <*> c .:? "comment"
+  pair [pn, psig] = pure (pn, psig)
+  pair other = fail ("det_sign: expected [pubnonce, psig], got " <> show (length other) <> " values")
 
 -- Library steps ------------------------------------------------------------------
 
@@ -482,12 +513,23 @@ keyAggBytes keys ts = do
   first FKeyAgg (keyAgg pks) >>= applyTweaks ts
 
 -- | Opens a session from encoded inputs and signs with an encoded secret nonce.
-signBytes :: SecKey -> ByteString -> [ByteString] -> [(ByteString, Bool)] -> ByteString -> ByteString -> Either Failure PartialSignature
-signBytes sk secnonce keys ts aggnonce m = do
+signBytes :: SecKey -> ByteString -> [ByteString] -> [(ByteString, Bool)] -> ByteString -> ByteString -> IO (Either Failure PartialSignature)
+signBytes sk secnonce keys ts aggnonce m = case (,) <$> keyAggBytes keys ts <*> decodeF aggnonce of
+  Left err -> pure (Left err)
+  Right (ctx, agg) -> do
+    imported <- secNonceFromBytes secnonce
+    case imported of
+      Left err -> pure (Left (FDecode err))
+      Right sn -> first FSign <$> sign sn sk (newSession ctx agg m)
+
+{- | DeterministicSign from encoded inputs, in the order the reference
+implementation parses them: public keys and tweaks, then aggothernonce.
+-}
+detSignBytes :: SecKey -> ByteString -> [ByteString] -> [(ByteString, Bool)] -> ByteString -> Maybe ByteString -> Either Failure (PubNonce, PartialSignature)
+detSignBytes sk aggOther keys ts m rand = do
   ctx <- keyAggBytes keys ts
-  agg <- decodeF aggnonce
-  sn <- first FDecode (secNonceFromBytes secnonce)
-  first FSign (sign sn sk (newSession ctx agg m))
+  agg <- decodeF aggOther
+  first FSign (deterministicSign sk agg ctx m rand)
 
 -- | PartialSigVerify as BIP-327 defines it: aggregates the given nonces itself.
 verifyBytes :: [ByteString] -> [ByteString] -> [(ByteString, Bool)] -> ByteString -> Int -> PartialSignature -> Either Failure Bool
@@ -605,13 +647,8 @@ caseName section i comment = section <> " #" <> show i <> maybe "" (\c -> " (" <
 
 -- Tests ----------------------------------------------------------------------
 
--- | Tests run against the library, and cases listed as not expressible.
-data FileTests = FileTests [TestTree] [TestTree]
-
 vectorTests :: Vectors -> [TestTree]
-vectorTests vs =
-  [testGroup file run | (file, FileTests run _) <- files, not (null run)]
-    <> [testGroup "Not expressible through the public API" [testGroup file skipped | (file, FileTests _ skipped) <- files, not (null skipped)]]
+vectorTests vs = [testGroup file run | (file, run) <- files]
  where
   files =
     [ ("key_sort_vectors.json", keySortTests (vKeySort vs))
@@ -624,17 +661,15 @@ vectorTests vs =
     , ("det_sign_vectors.json", detSignTests (vDetSign vs))
     ]
 
-keySortTests :: KeySortVectors -> FileTests
+keySortTests :: KeySortVectors -> [TestTree]
 keySortTests (KeySortVectors pubkeys sorted) =
-  FileTests
-    [ testCase "KeySort" $ do
-        pks <- expectLib "decode" (traverse decodeF pubkeys >>= nonEmptyF "pubkey")
-        map (hexOf . encode) (NE.toList (keySort (pks :: NonEmpty PubKey))) @?= map hexOf sorted
-    ]
-    []
+  [ testCase "KeySort" $ do
+      pks <- expectLib "decode" (traverse decodeF pubkeys >>= nonEmptyF "pubkey")
+      map (hexOf . encode) (NE.toList (keySort (pks :: NonEmpty PubKey))) @?= map hexOf sorted
+  ]
 
-keyAggTests :: KeyAggVectors -> FileTests
-keyAggTests v = FileTests (zipWith validCase [0 ..] (kaValid v) <> zipWith errorCase [0 ..] (kaError v)) []
+keyAggTests :: KeyAggVectors -> [TestTree]
+keyAggTests v = zipWith validCase [0 ..] (kaValid v) <> zipWith errorCase [0 ..] (kaError v)
  where
   validCase i (keyIdxs, expected) = testCase (caseName "valid" i Nothing) $ do
     keys <- expectRight "vector" (select "pubkey" (kaPubkeys v) keyIdxs)
@@ -650,8 +685,8 @@ keyAggTests v = FileTests (zipWith validCase [0 ..] (kaValid v) <> zipWith error
    where
     name = caseName "error" (i :: Int) (kaeComment c)
 
-nonceGenTests :: [NonceGenCase] -> FileTests
-nonceGenTests cases = FileTests (zipWith run [0 ..] cases) []
+nonceGenTests :: [NonceGenCase] -> [TestTree]
+nonceGenTests = zipWith run [0 ..]
  where
   run :: Int -> NonceGenCase -> TestTree
   run i c = testCase (caseName "case" i (ngComment c)) $ do
@@ -660,13 +695,13 @@ nonceGenTests cases = FileTests (zipWith run [0 ..] cases) []
       sk <- traverse (first FDecode . secKeyFromBytes) (ngSk c)
       aggpk <- traverse decodeF (ngAggpk c)
       pure (pk, NonceInputs{nonceSecKey = sk, nonceAggPubKey = aggpk, nonceMessage = ngMsg c, nonceExtraInput = ngExtraIn c})
-    result <- expectLib "NonceGen" (nonceGenWithRand (ngRand c) pk inputs)
-    (sn, pn) <- maybe (assertFailure "NonceGen gave a zero nonce") pure result
-    assertBytes "secnonce" (ngSecnonce c) (secNonceToBytes sn)
+    (sn, pn) <- nonceGenWithRand (ngRand c) pk inputs >>= expectLib "NonceGen"
+    exported <- secNonceToBytes sn >>= maybe (assertFailure "a fresh nonce cannot be exported") pure
+    assertBytes "secnonce" (ngSecnonce c) exported
     assertBytes "pubnonce" (ngPubnonce c) (encode pn)
 
-nonceAggTests :: NonceAggVectors -> FileTests
-nonceAggTests v = FileTests (zipWith validCase [0 ..] (naValid v) <> zipWith errorCase [0 ..] (naError v)) []
+nonceAggTests :: NonceAggVectors -> [TestTree]
+nonceAggTests v = zipWith validCase [0 ..] (naValid v) <> zipWith errorCase [0 ..] (naError v)
  where
   validCase i (idxs, expected, comment) = testCase (caseName "valid" i comment) $ do
     nonces <- expectRight "vector" (select "pnonce" (naPnonces v) idxs)
@@ -678,24 +713,21 @@ nonceAggTests v = FileTests (zipWith validCase [0 ..] (naValid v) <> zipWith err
    where
     name = caseName "error" (i :: Int) comment
 
-signVerifyTests :: SignVerifyVectors -> FileTests
+signVerifyTests :: SignVerifyVectors -> [TestTree]
 signVerifyTests v =
-  FileTests
-    ( [ testCase "setup: sk derives pubkeys[0]" $ do
-          pk0 <- expectRight "vector" (at "pubkey" (svPubkeys v) 0)
-          sk <- secKey
-          assertBytes "pubkey" pk0 (encode (secKeyPubKey sk))
-      , testCase "setup: secnonces[0] has public nonce pnonces[0]" $ do
-          sn <- expectRight "vector" (at "secnonce" (svSecnonces v) 0) >>= expectLib "secnonce" . secNonceFromBytes
-          pn0 <- expectRight "vector" (at "pnonce" (svPnonces v) 0)
-          assertBytes "pubnonce" pn0 (encode (secNoncePubNonce sn))
-      ]
-        <> zipWith validCase [0 ..] (svValid v)
-        <> zipWith signErrorCase [0 ..] (svSignError v)
-        <> zipWith verifyFailCase [0 ..] (svVerifyFail v)
-        <> zipWith verifyErrorCase [0 ..] (svVerifyError v)
-    )
-    []
+  [ testCase "setup: sk derives pubkeys[0]" $ do
+      pk0 <- expectRight "vector" (at "pubkey" (svPubkeys v) 0)
+      sk <- secKey
+      assertBytes "pubkey" pk0 (encode (secKeyPubKey sk))
+  , testCase "setup: secnonces[0] has public nonce pnonces[0]" $ do
+      sn <- expectRight "vector" (at "secnonce" (svSecnonces v) 0) >>= (secNonceFromBytes >=> expectLib "secnonce")
+      pn0 <- expectRight "vector" (at "pnonce" (svPnonces v) 0)
+      assertBytes "pubnonce" pn0 (encode (secNoncePubNonce sn))
+  ]
+    <> zipWith validCase [0 ..] (svValid v)
+    <> zipWith signErrorCase [0 ..] (svSignError v)
+    <> zipWith verifyFailCase [0 ..] (svVerifyFail v)
+    <> zipWith verifyErrorCase [0 ..] (svVerifyError v)
  where
   secKey = expectLib "secKeyFromBytes" (secKeyFromBytes (svSk v))
 
@@ -710,7 +742,7 @@ signVerifyTests v =
           (keys, _, agg, m) <- inputs
           sk <- secKey
           sn <- expectRight "vector" (at "secnonce" (svSecnonces v) 0)
-          psig <- expectLib "Sign" (signBytes sk sn keys [] agg m)
+          psig <- signBytes sk sn keys [] agg m >>= expectLib "Sign"
           assertBytes "psig" (svvExpected c) (encode psig)
       , testCase "PartialSigVerify accepts the expected partial signature" $ do
           (keys, nonces, _, m) <- inputs
@@ -741,7 +773,7 @@ signVerifyTests v =
           pure (keys, agg, m, sn)
         expected <- expectRight "vector" (valueError (sseError c) >>= expectedFailure [] (Just sn))
         sk <- secKey
-        expectFailure expected (signBytes sk sn keys [] agg m)
+        signBytes sk sn keys [] agg m >>= expectFailure expected
    where
     name = caseName "sign_error" (i :: Int) (sseComment c)
 
@@ -772,8 +804,8 @@ signVerifyTests v =
    where
     name = caseName "verify_error" (i :: Int) (svfComment c)
 
-tweakTests :: TweakVectors -> FileTests
-tweakTests v = FileTests (zipWith (run "valid") [0 ..] (twValid v) <> zipWith (run "error") [0 ..] (twError v)) []
+tweakTests :: TweakVectors -> [TestTree]
+tweakTests v = zipWith (run "valid") [0 ..] (twValid v) <> zipWith (run "error") [0 ..] (twError v)
  where
   run :: String -> Int -> TweakCase -> TestTree
   run section i c = case tcOutcome c of
@@ -787,7 +819,7 @@ tweakTests v = FileTests (zipWith (run "valid") [0 ..] (twValid v) <> zipWith (r
         , testCase "Sign returns the expected partial signature" $ do
             (keys, _, tweaks) <- inputs
             sk <- secKey
-            psig <- expectLib "Sign" (signBytes sk (twSecnonce v) keys tweaks (twAggnonce v) (twMsg v))
+            psig <- signBytes sk (twSecnonce v) keys tweaks (twAggnonce v) (twMsg v) >>= expectLib "Sign"
             assertBytes "psig" expected (encode psig)
         , testCase "PartialSigVerify accepts the expected partial signature" $ do
             (keys, nonces, tweaks) <- inputs
@@ -798,7 +830,7 @@ tweakTests v = FileTests (zipWith (run "valid") [0 ..] (twValid v) <> zipWith (r
       (keys, _, tweaks) <- inputs
       sk <- secKey
       expected <- expectRight "vector" (valueError err >>= expectedFailure tweaks Nothing)
-      expectFailure expected (signBytes sk (twSecnonce v) keys tweaks (twAggnonce v) (twMsg v))
+      signBytes sk (twSecnonce v) keys tweaks (twAggnonce v) (twMsg v) >>= expectFailure expected
    where
     name = caseName section i (tcComment c)
     inputs = expectRight "vector" $ do
@@ -808,8 +840,8 @@ tweakTests v = FileTests (zipWith (run "valid") [0 ..] (twValid v) <> zipWith (r
       pure (keys, nonces, tweaks)
   secKey = expectLib "secKeyFromBytes" (secKeyFromBytes (twSk v))
 
-sigAggTests :: SigAggVectors -> FileTests
-sigAggTests v = FileTests (zipWith (run "valid") [0 ..] (saValid v) <> zipWith (run "error") [0 ..] (saError v)) []
+sigAggTests :: SigAggVectors -> [TestTree]
+sigAggTests v = zipWith (run "valid") [0 ..] (saValid v) <> zipWith (run "error") [0 ..] (saError v)
  where
   run :: String -> Int -> SigAggCase -> TestTree
   run section i c = case sacOutcome c of
@@ -847,8 +879,60 @@ sigAggTests v = FileTests (zipWith (run "valid") [0 ..] (saValid v) <> zipWith (
         ps <- traverse decodeF psigs >>= nonEmptyF "psig"
         pure (partialSigAgg (newSession ctx agg (saMsg v)) ps, ctx)
 
-detSignTests :: DetSignVectors -> FileTests
-detSignTests (DetSignVectors valid errs) =
-  FileTests [] (zipWith (skip "valid") [0 ..] valid <> zipWith (skip "error") [0 ..] errs)
+detSignTests :: DetSignVectors -> [TestTree]
+detSignTests v =
+  testCase "setup: sk derives pubkeys[0]" (do pk0 <- expectRight "vector" (at "pubkey" (dsPubkeys v) 0); sk <- secKey; assertBytes "pubkey" pk0 (encode (secKeyPubKey sk)))
+    : zipWith (run "valid") [0 ..] (dsValid v)
+      <> zipWith (run "error") [0 ..] (dsError v)
  where
-  skip section i comment = testCase (caseName section i comment <> " [SKIPPED: DeterministicSign is not implemented]") (pure ())
+  secKey = expectLib "secKeyFromBytes" (secKeyFromBytes (dsSk v))
+  run :: String -> Int -> DetSignCase -> TestTree
+  run section i c = case dscOutcome c of
+    Right (expectedNonce, expectedPsig) ->
+      testGroup
+        name
+        [ testCase "DeterministicSign returns the expected public nonce and partial signature" $ do
+            (pn, psig) <- detSign
+            assertBytes "pubnonce" expectedNonce (encode pn)
+            assertBytes "psig" expectedPsig (encode psig)
+        , testCase "PartialSigVerify accepts it in the session of aggothernonce and the public nonce" $ do
+            (keys, tweaks, m) <- inputs
+            (pn, psig) <- detSign
+            sk <- secKey
+            -- NonceAgg((aggothernonce, pubnonce)): aggothernonce parses as a public nonce.
+            other <- expectLib "decode aggothernonce" (decodeF (dscAggOtherNonce c))
+            ctx <- expectLib "KeyAgg" (keyAggBytes keys tweaks)
+            pk <- expectRight "vector" (at "pubkey" (NE.toList (keyAggPubKeys ctx)) (dscSigner c))
+            pk @?= secKeyPubKey sk
+            assertBool "partialSigVerify" (partialSigVerify (newSession ctx (nonceAgg (other :| [pn])) m) pk pn psig)
+        ]
+    Left err@(InvalidContribution (Just _) "pubkey") ->
+      encodingCase name err $ do
+        keys <- contributions "pubkey" asPubKey (dsPubkeys v) (dscKeys c)
+        pure (keys <> [("aggothernonce", Nothing, asAggNonce (dscAggOtherNonce c))])
+    -- BIP-327 blames the nonce aggregator both for an invalid encoding (which
+    -- does not decode to an 'AggNonce') and for a half at infinity (which
+    -- 'deterministicSign' rejects).
+    Left (InvalidContribution Nothing "aggothernonce") -> testCase name $ do
+      (keys, tweaks, m) <- inputs
+      sk <- secKey
+      ctx <- expectLib "KeyAgg" (keyAggBytes keys tweaks)
+      case decode (dscAggOtherNonce c) of
+        Left decodeErr -> decodeErr @?= InvalidPoint
+        Right agg -> either Just (const Nothing) (deterministicSign sk agg ctx m (dscRand c)) @?= Just AggOtherNonceAtInfinity
+    Left err -> testCase name $ do
+      (keys, tweaks, m) <- inputs
+      sk <- secKey
+      expected <- expectRight "vector" (valueError err >>= expectedFailure tweaks Nothing)
+      expectFailure expected (detSignBytes sk (dscAggOtherNonce c) keys tweaks m (dscRand c))
+   where
+    name = caseName section i (dscComment c)
+    inputs = expectRight "vector" $ do
+      keys <- select "pubkey" (dsPubkeys v) (dscKeys c)
+      tweaks <- tweakSpecs (dscTweaks c) [0 .. length (dscTweaks c) - 1] (dscXOnly c)
+      m <- at "msg" (dsMsgs v) (dscMsg c)
+      pure (keys, tweaks, m)
+    detSign = do
+      (keys, tweaks, m) <- inputs
+      sk <- secKey
+      expectLib "DeterministicSign" (detSignBytes sk (dscAggOtherNonce c) keys tweaks m (dscRand c))

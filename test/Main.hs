@@ -4,6 +4,7 @@ import ApplyTweaks (testApplyTweaks)
 import Bip327Regressions (testBip327Regressions)
 import Encoding (testEncoding)
 import Example (testExample)
+import NonceSafety (testNonceSafety)
 import OfficialVectors (officialVectorTests)
 import Properties (testProtocol)
 import SignVerify (testSignVerify)
@@ -11,7 +12,7 @@ import Test.Tasty
 
 -- | Unit tests.
 unitTests :: TestTree
-unitTests = testGroup "Unit Tests" [testExample, testSignVerify, testApplyTweaks, testBip327Regressions]
+unitTests = testGroup "Unit Tests" [testExample, testSignVerify, testNonceSafety, testApplyTweaks, testBip327Regressions]
 
 -- | Property tests.
 propertyTests :: TestTree

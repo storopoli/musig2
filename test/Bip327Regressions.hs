@@ -59,7 +59,8 @@ svPubNonces =
 svMsg :: ByteString
 svMsg = decodeHex "F95466D086770E689964664219266FE5ED215C92AE20BAB5C9D79ADDDDF3C0CF"
 
-svSecNonce :: SecNonce
+-- | A fresh copy of the vectors' secret nonce (each one signs once).
+svSecNonce :: IO SecNonce
 svSecNonce =
   secNonceFromInts
     0x508B81A611F100A6B2B6B29656590898AF488BCF2E1F55CF22E5CFB84421FE61
@@ -109,8 +110,8 @@ infinityCases =
 infinityCase :: (String, NonEmpty PubKey, ByteString, ByteString, ByteString) -> TestTree
 infinityCase (label, keys, aggHex, expectedPsig, expectedRx) = testCase label $ do
   let ses = session keys aggHex
-      psig = unsafeRight (sign svSecNonce svSecKey ses)
       sig = partialSigAgg ses (psigFromInt 0 :| [])
+  psig <- svSecNonce >>= \sn -> unsafeRight <$> sign sn svSecKey ses
   hexOf (encode psig) @?= hexOf (decodeHex expectedPsig)
   hexOf (BS.take 32 (encode sig)) @?= hexOf (decodeHex expectedRx)
 
@@ -119,7 +120,9 @@ infinityCase (label, keys, aggHex, expectedPsig, expectedRx) = testCase label $ 
 signerNotInList :: Assertion
 signerNotInList = do
   let ses = session (NE.fromList (NE.tail svPubkeys)) "028465FCF0BBDBCF443AABCCE533D42B4B5A10966AC09A49655E8C42DAAB8FCD61037496A3CC86926D452CAFCFD55D25972CA1675D549310DE296BFF42F72EEEA8C9"
-  either Just (const Nothing) (sign svSecNonce svSecKey ses) @?= Just SignerNotInSession
+  sn <- svSecNonce
+  result <- sign sn svSecKey ses
+  either Just (const Nothing) result @?= Just SignerNotInSession
 
 -- gacc = n - 1 ------------------------------------------------------------------
 
@@ -153,11 +156,11 @@ gaccCase i (sks, ks, tweaks, expectedPsigs, expectedSig) = testCase ("case " <> 
   let msg = decodeHex "599C67EA410D005B9DA90817CF03ED3B1C868E4DA4EDF00A5880B0082C237869"
       secKeys = map secKeyFromInt sks
       pubs = map secKeyPubKey secKeys
-      secNonces = zipWith (\p (k1, k2) -> secNonceFromInts k1 k2 p) pubs ks
       ctx = unsafeRight (keyAgg (NE.fromList pubs) >>= \c -> foldM applyKind c tweaks)
-      ses = newSession ctx (nonceAgg (NE.fromList (map secNoncePubNonce secNonces))) msg
-      psigs = unsafeRight (zipWithM (\sn sk -> sign sn sk ses) secNonces secKeys)
-      sig = partialSigAgg ses (NE.fromList psigs)
+  secNonces <- zipWithM (\p (k1, k2) -> secNonceFromInts k1 k2 p) pubs ks
+  let ses = newSession ctx (nonceAgg (NE.fromList (map secNoncePubNonce secNonces))) msg
+  psigs <- unsafeRight . sequence <$> zipWithM (\sn sk -> sign sn sk ses) secNonces secKeys
+  let sig = partialSigAgg ses (NE.fromList psigs)
   map (hexOf . encode) psigs @?= map (hexOf . decodeHex) expectedPsigs
   hexOf (encode sig) @?= hexOf (decodeHex expectedSig)
   assertBool "aggregated signature verifies" (verify (aggXOnlyPubKey ctx) msg sig)

@@ -12,9 +12,9 @@ module Properties (testProtocol) where
 import Control.Monad (foldM, void)
 import Crypto.Curve.Secp256k1.MuSig2
 import Crypto.Curve.Secp256k1.MuSig2.Internal.KeyAgg (KeyAggContext (..))
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (nonceGenWithRand)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (curveOrder, integerToBytes32)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Types (PartialSignature (..), Tweak (..))
+import Crypto.Curve.Secp256k1.MuSig2.Unsafe (nonceGenWithRand)
 import qualified Crypto.Hash.SHA256 as SHA256
 import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
@@ -99,19 +99,27 @@ data Run = Run
   , runSignature :: Signature
   }
 
-runScenario :: Scenario -> Either String Run
-runScenario sc = do
-  let signers = scSigners sc
-      pks = fmap (secKeyPubKey . signerSecKey) signers
-      msg = scMessage sc
-  ctx0 <- first show (keyAgg (if scSortKeys sc then keySort pks else pks))
-  ctx <- first show (foldM applyTweakOp ctx0 (scTweaks sc))
-  nonces <- traverse (nonceFor ctx msg) signers
-  let session = newSession ctx (nonceAgg (fmap snd nonces)) msg
-  psigs <- traverse (\(s, (sn, _)) -> first show (sign sn (signerSecKey s) session)) (NE.zip signers nonces)
-  pure (Run ctx pks (fmap snd nonces) session psigs (partialSigAgg session psigs))
+runScenario :: Scenario -> IO (Either String Run)
+runScenario sc = case setup of
+  Left err -> pure (Left err)
+  Right ctx -> do
+    generated <- traverse (nonceFor ctx) signers
+    case first show (sequence generated) of
+      Left err -> pure (Left err)
+      Right nonces -> do
+        let session = newSession ctx (nonceAgg (fmap snd nonces)) msg
+        signed <- traverse (\(s, (sn, _)) -> sign sn (signerSecKey s) session) (NE.zip signers nonces)
+        pure $ do
+          psigs <- first show (sequence signed)
+          pure (Run ctx pks (fmap snd nonces) session psigs (partialSigAgg session psigs))
  where
-  nonceFor ctx msg s =
+  signers = scSigners sc
+  pks = fmap (secKeyPubKey . signerSecKey) signers
+  msg = scMessage sc
+  setup = do
+    ctx0 <- first show (keyAgg (if scSortKeys sc then keySort pks else pks))
+    first show (foldM applyTweakOp ctx0 (scTweaks sc))
+  nonceFor ctx s =
     let sk = signerSecKey s
         (bindSk, bindAgg, bindMsg, extra) = signerBind s
         inputs =
@@ -121,21 +129,20 @@ runScenario sc = do
             , nonceMessage = if bindMsg then Just msg else Nothing
             , nonceExtraInput = extra
             }
-     in case nonceGenWithRand (signerRand s) (secKeyPubKey sk) inputs of
-          Right (Just r) -> Right r
-          Right Nothing -> Left "nonceGenWithRand: zero nonce"
-          Left err -> Left (show err)
+     in nonceGenWithRand (signerRand s) (secKeyPubKey sk) inputs
 
 -- | Runs a scenario and a property on its result.
 withRun :: (Testable p) => (Scenario -> Run -> p) -> Property
-withRun k = forAll genScenario $ \sc -> case runScenario sc of
-  Left err -> counterexample err False
-  Right r ->
-    tabulate "signers" [show (length (scSigners sc))]
-      . classify (kacGaccNeg (runCtx r)) "gacc = n - 1"
-      . classify (any isTaproot (scTweaks sc)) "Taproot tweak"
-      . classify (hasDuplicates (runPubKeys r)) "duplicate keys"
-      $ property (k sc r)
+withRun k = forAll genScenario $ \sc -> ioProperty $ do
+  result <- runScenario sc
+  pure $ case result of
+    Left err -> counterexample err False
+    Right r ->
+      tabulate "signers" [show (length (scSigners sc))]
+        . classify (kacGaccNeg (runCtx r)) "gacc = n - 1"
+        . classify (any isTaproot (scTweaks sc)) "Taproot tweak"
+        . classify (hasDuplicates (runPubKeys r)) "duplicate keys"
+        $ property (k sc r)
  where
   isTaproot (Taproot _) = True
   isTaproot _ = False
@@ -196,11 +203,13 @@ prop_signRejects :: Property
 prop_signRejects = withRun $ \_ r -> forAllShow genSecKey showSecKey $ \outsider -> withSigner r $ \j ->
   let session = runSession r
       outsiderPk = secKeyPubKey outsider
-      outsiderNonce = unsafeRight (nonceGenWithRand (BS.replicate 32 7) outsiderPk noNonceInputs)
-   in notElem outsiderPk (runPubKeys r) ==>
-        void (sign (maybe (error "zero nonce") fst outsiderNonce) outsider session) === Left SignerNotInSession
-          .&&. signerIndex (runCtx r) outsiderPk === Nothing
-          .&&. not (partialSigVerify session outsiderPk (at (runPubNonces r) j) (at (runPsigs r) j))
+   in notElem outsiderPk (runPubKeys r) ==> ioProperty $ do
+        (outsiderNonce, _) <- nonceGenWithRand (BS.replicate 32 7) outsiderPk noNonceInputs >>= either (fail . show) pure
+        result <- sign outsiderNonce outsider session
+        pure $
+          void result === Left SignerNotInSession
+            .&&. signerIndex (runCtx r) outsiderPk === Nothing
+            .&&. not (partialSigVerify session outsiderPk (at (runPubNonces r) j) (at (runPsigs r) j))
 
 prop_keySort :: Property
 prop_keySort = forAll (choose (1, 8) >>= (`vectorOf` genPubKey)) $ \keys -> forAll (shuffle keys) $ \perm ->

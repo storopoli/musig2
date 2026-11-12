@@ -19,6 +19,7 @@ module Crypto.Curve.Secp256k1.MuSig2.Internal.Hash (
   hashChallenge,
   hashAux,
   hashNonce,
+  hashDetNonce,
   hashTapTweak,
 ) where
 
@@ -63,6 +64,11 @@ hashAux = taggedHash "MuSig/aux"
 hashNonce :: ByteString -> ByteString
 hashNonce = taggedHash "MuSig/nonce"
 {-# NOINLINE hashNonce #-}
+
+-- | @hash_MuSig/deterministic/nonce@.
+hashDetNonce :: ByteString -> ByteString
+hashDetNonce = taggedHash "MuSig/deterministic/nonce"
+{-# NOINLINE hashDetNonce #-}
 
 -- | @hash_TapTweak@ (BIP-341).
 hashTapTweak :: ByteString -> ByteString
