@@ -2,11 +2,19 @@
   description = "Haskell MuSig2 Library";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+    # Like the ppad flakes (and git-hooks.nix) we track nixpkgs-unstable: it is
+    # the channel Hydra gates on both Linux and Darwin, and Dependabot keeps the
+    # lock fresh without a manual branch switch every release.
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    git-hooks.url = "github:cachix/git-hooks.nix";
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
-    # Keep the ppad stack pinned until nixpkgs carries the current releases.
+    # Keep the ppad stack pinned to Hackage releases: nixpkgs still carries
+    # ppad-secp256k1 0.5.4 / ppad-fixed 0.1.3 (below our bounds) and marks
+    # ppad-sha256 / ppad-sha512 broken.
     ppad-secp256k1-src = {
       url = "https://hackage.haskell.org/package/ppad-secp256k1-0.5.10/ppad-secp256k1-0.5.10.tar.gz";
       flake = false;
@@ -51,13 +59,10 @@
       let
         lib = "musig2";
 
-        pkgs = import nixpkgs {
-          inherit system;
-          config.allowBroken = true;
-        };
+        pkgs = import nixpkgs { inherit system; };
         hlib = pkgs.haskell.lib;
-        # GHC 9.10.3 is Nix 25.11's default
-        hpkgs = pkgs.haskell.packages.ghc9103.extend (
+        # GHC 9.10 is nixpkgs' default GHC and our lowest supported version.
+        hpkgs = pkgs.haskell.packages.ghc910.extend (
           new: old: {
             ${lib} = new.callCabal2nix lib ./. { };
             # tests are broken somehow in these deps
