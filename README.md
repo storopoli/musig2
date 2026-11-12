@@ -106,7 +106,59 @@ taprootExample = do
 ```
 <!-- taproot end -->
 
-Both examples are compiled and run by the test suite (`test/Example.hs`),
+### Coordinator
+
+The `Crypto.Curve.Secp256k1.MuSig2.Coordinator` module collects the signers'
+contributions as bytes, by signer index (the position of the signer's key in
+the key aggregation context). It decodes and verifies each nonce and partial
+signature as it arrives and blames the signer of an invalid, conflicting or
+missing one (`Blame`). The coordinator can be one of the signers or a
+separate, untrusted party: a wrong aggregate nonce can only make the session
+fail. With `Control.Monad (foldM)`, `Data.Bifunctor (first)` and the module
+imported qualified as `Coordinator`:
+
+<!-- coordinator start -->
+```haskell
+-- | A coordinator collects three signers' nonces and partial signatures as bytes.
+coordinatorExample :: IO Bool
+coordinatorExample = do
+  sks <- traverse (orThrow . MuSig2.secKeyFromBytes . BS.replicate 32) (0x66 :| [0x77, 0x88])
+  -- Signer i is the one with the i-th public key of the context.
+  keyAggCtx <- orThrow (MuSig2.keyAgg (fmap MuSig2.secKeyPubKey sks))
+  let msg = "pay Carol 1 BTC"
+
+  -- Round one: each signer sends its encoded public nonce, in any order.
+  nonces <- traverse (\sk -> MuSig2.nonceGen (MuSig2.secKeyPubKey sk) MuSig2.noNonceInputs >>= orThrow) (NE.toList sks)
+  nonceRound <-
+    orThrow $
+      foldM
+        (\r (i, (_, pubNonce)) -> Coordinator.receivePubNonce i (MuSig2.encode pubNonce) r)
+        (Coordinator.newNonceRound keyAggCtx)
+        (zip [0 ..] nonces)
+  -- Fails if a nonce is missing (here reporting only the first such signer).
+  collected <- orThrow (first NE.head (Coordinator.finishNonceRound nonceRound))
+
+  -- The coordinator sends the aggregate nonce to every signer, who decodes it
+  -- and opens the session.
+  aggNonce <- orThrow (MuSig2.decode (MuSig2.encode (Coordinator.collectedAggNonce collected)))
+  let session = MuSig2.newSession keyAggCtx aggNonce msg
+
+  -- Round two: each signer sends its encoded partial signature. The
+  -- coordinator verifies each one and blames the signer of an invalid one.
+  psigs <- traverse (\(sk, (secNonce, _)) -> MuSig2.sign secNonce sk session >>= orThrow) (zip (NE.toList sks) nonces)
+  sigRound <-
+    orThrow $
+      foldM
+        (\r (i, psig) -> Coordinator.receivePartialSig i (MuSig2.encode psig) r)
+        (Coordinator.newSigRound collected msg)
+        (zip [0 ..] psigs)
+  -- Aggregates the partial signatures and verifies the result.
+  signature <- orThrow (Coordinator.finishSigRound sigRound)
+  pure (MuSig2.verify (MuSig2.aggXOnlyPubKey keyAggCtx) msg signature)
+```
+<!-- coordinator end -->
+
+All three examples are compiled and run by the test suite (`test/Example.hs`),
 which also checks that this README shows them verbatim.
 
 Upgrading from 0.2? The [CHANGELOG](CHANGELOG) lists every renamed and

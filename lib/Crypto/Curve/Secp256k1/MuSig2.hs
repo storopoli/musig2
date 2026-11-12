@@ -22,6 +22,10 @@ Schnorr signature for their aggregate public key, in two rounds.
    combines them with 'partialSigAgg'. Anyone can check the result with
    'verify' against 'aggXOnlyPubKey'.
 
+"Crypto.Curve.Secp256k1.MuSig2.Coordinator" runs both rounds for a
+coordinator that receives the contributions as bytes: it decodes and verifies
+each one and blames the signer of an invalid, conflicting or missing one.
+
 Values sent between signers are encoded and decoded with 'Encode', in the
 BIP-327 byte formats. Decoding validates: every value of a type exported here
 is valid by construction.
@@ -53,7 +57,8 @@ is valid by construction.
 * __Verify partial signatures.__ 'partialSigAgg' does not check its inputs;
   run 'partialSigVerify' on every partial signature you did not make, so a
   wrong one is attributed to its signer instead of producing an invalid
-  signature. 'sign' checks its own result.
+  signature ("Crypto.Curve.Secp256k1.MuSig2.Coordinator" does this). 'sign'
+  checks its own result.
 
 * __Constant-time arithmetic on secrets.__ Secret keys and nonces are never
   held in an 'Integer'. They are parsed, range-checked, reduced from hashes,

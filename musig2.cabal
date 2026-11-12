@@ -62,6 +62,7 @@ library
   import:          llvm, implementation
   exposed-modules:
     Crypto.Curve.Secp256k1.MuSig2
+    Crypto.Curve.Secp256k1.MuSig2.Coordinator
     Crypto.Curve.Secp256k1.MuSig2.Unsafe
 
   other-modules:
@@ -83,6 +84,7 @@ library internal
   visibility:      private
   exposed-modules:
     Crypto.Curve.Secp256k1.MuSig2
+    Crypto.Curve.Secp256k1.MuSig2.Coordinator
     Crypto.Curve.Secp256k1.MuSig2.Internal.Error
     Crypto.Curve.Secp256k1.MuSig2.Internal.Hash
     Crypto.Curve.Secp256k1.MuSig2.Internal.KeyAgg
@@ -103,6 +105,7 @@ test-suite musig2-tests
   other-modules:
     ApplyTweaks
     Bip327Regressions
+    CoordinatorRounds
     Encoding
     Example
     Generators

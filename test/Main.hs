@@ -2,6 +2,7 @@ module Main where
 
 import ApplyTweaks (testApplyTweaks)
 import Bip327Regressions (testBip327Regressions)
+import CoordinatorRounds (testCoordinator)
 import Encoding (testEncoding)
 import Example (testExample)
 import NonceSafety (testNonceSafety)
@@ -13,7 +14,7 @@ import Test.Tasty
 
 -- | Unit tests.
 unitTests :: TestTree
-unitTests = testGroup "Unit Tests" [testExample, testSignVerify, testNonceSafety, testApplyTweaks, testBip327Regressions]
+unitTests = testGroup "Unit Tests" [testExample, testSignVerify, testNonceSafety, testApplyTweaks, testBip327Regressions, testCoordinator]
 
 -- | Property tests.
 propertyTests :: TestTree
