@@ -110,6 +110,14 @@ names to the new ones.
 * Drop support for GHC 9.8 (`base >= 4.20`); tested with GHC 9.10.3, 9.12.4
   and 9.14.1
 * Security hardening:
+  - Constant-time arithmetic on secrets: secret keys and nonce scalars are
+    no longer `Integer`s. They are parsed, range-checked (`secKeyFromBytes`,
+    `secNonceFromBytes`), reduced from hashes (`NonceGen`,
+    `DeterministicSign`), combined in `sign`, negated and encoded with
+    `ppad-fixed`'s constant-time Montgomery arithmetic, and passed to the
+    generator multiplication as fixed-width words instead of through the
+    variable-time `fromInteger`. Public values stay `Integer`. New
+    dependency: `ppad-fixed >= 0.2.2`.
   - Require `entropy >= 0.4.1.6`, which waits for the kernel entropy pool
     (`getrandom`) instead of reading `/dev/urandom` early at boot
   - Require `ppad-sha256 >= 0.3.5`, which no longer crashes on aarch64 CPUs
@@ -118,8 +126,9 @@ names to the new ones.
     (`-optlc=-x86-cmov-converter=false`), as `ppad-secp256k1` does
   - Drop the `binary` dependency
   - Correct the security documentation: nonce reuse in any session leaks the
-    secret key, `secNonceGenWithRand` is deterministic, and the variable-time
-    code is the `Integer` scalar arithmetic, not the curve operations
+    secret key, `secNonceGenWithRand` is deterministic, and the remaining
+    caveats of constant-time code (public values are variable-time by
+    design, GHC's code generation, best-effort zeroization) are spelled out
 * Fix the README and module examples, which imported a module from a package
   that is no longer a dependency
 

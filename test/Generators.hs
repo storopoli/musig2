@@ -41,12 +41,11 @@ import Crypto.Curve.Secp256k1.MuSig2 (
   secKeyPubKey,
   secKeyToBytes,
  )
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Point (mulGSecret)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Point (mulGPublic)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (curveOrder)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Types (mkAggNonce, mkPubNonce)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Maybe (fromMaybe)
 import Test.Tasty.QuickCheck (Gen, arbitrary, choose, frequency, oneof, vectorOf)
 import Util (hexOf, psigFromInt, secKeyFromInt, tweakFromInt)
 
@@ -96,7 +95,7 @@ genRand :: Gen ByteString
 genRand = genBytes 32
 
 pointOf :: Integer -> Gen Projective
-pointOf k = pure (fromMaybe (error "scalar out of range") (mulGSecret k))
+pointOf k = pure (mulGPublic k)
 
 genPubNonce :: Gen PubNonce
 genPubNonce = mkPubNonce <$> (genNonZeroScalar >>= pointOf) <*> (genNonZeroScalar >>= pointOf)

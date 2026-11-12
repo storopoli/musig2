@@ -7,6 +7,7 @@ import Example (testExample)
 import NonceSafety (testNonceSafety)
 import OfficialVectors (officialVectorTests)
 import Properties (testProtocol)
+import Scalars (testScalars)
 import SignVerify (testSignVerify)
 import Test.Tasty
 
@@ -16,7 +17,7 @@ unitTests = testGroup "Unit Tests" [testExample, testSignVerify, testNonceSafety
 
 -- | Property tests.
 propertyTests :: TestTree
-propertyTests = testGroup "Property Tests" [testEncoding, testProtocol]
+propertyTests = testGroup "Property Tests" [testEncoding, testScalars, testProtocol]
 
 -- | Run all tests.
 main :: IO ()

@@ -125,7 +125,9 @@ before anything else, so a second `sign` with the same nonce, from any copy
 or thread, fails with `SecNonceAlreadyUsed`. The
 `Crypto.Curve.Secp256k1.MuSig2.Unsafe` module holds the escape hatches this
 cannot cover (caller-supplied randomness, counters, exporting secret nonces).
-The scalar arithmetic on secrets is not constant-time yet.
+Arithmetic on secret keys and nonces is constant-time (fixed-width
+Montgomery arithmetic from `ppad-fixed`); the module documentation lists the
+remaining caveats.
 
 The API is hard to misuse by construction: every value of an exported type is
 valid (decoders and smart constructors check points, scalar ranges and

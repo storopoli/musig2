@@ -5,7 +5,7 @@ module Main where
 import Criterion.Main
 import Crypto.Curve.Secp256k1.MuSig2
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (newSecNonce, pubNonceFromScalars)
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (integerToBytes32)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (SecScalar, integerToBytes32, secScalarFromBytes)
 import Crypto.Curve.Secp256k1.MuSig2.Unsafe (nonceGenWithRand, signWithoutVerification)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -20,6 +20,9 @@ unsafeRight = either (error . show) id
 secKeyN :: Integer -> SecKey
 secKeyN = unsafeRight . secKeyFromBytes . integerToBytes32
 
+secScalarN :: Integer -> SecScalar
+secScalarN = unsafeRight . secScalarFromBytes . integerToBytes32
+
 -- | @n@ distinct public keys.
 pubKeys :: Int -> NonEmpty PubKey
 pubKeys n = NE.fromList [secKeyPubKey (secKeyN (fromIntegral i * 7919 + 3)) | i <- [1 .. n]]
@@ -28,18 +31,20 @@ msg :: ByteString
 msg = "0123456789abcdef0123456789abcdef"
 
 -- | Two signers with fixed nonce scalars and their public nonces.
-signers :: NonEmpty (SecKey, (Integer, Integer), PubNonce)
+signers :: NonEmpty (SecKey, (SecScalar, SecScalar), PubNonce)
 signers =
   NE.fromList
-    [ (sk, (100 + i, 200 + i), fromMaybe (error "zero nonce") (pubNonceFromScalars (100 + i) (200 + i)))
+    [ (sk, (k1, k2), fromMaybe (error "zero nonce") (pubNonceFromScalars k1 k2))
     | (sk, i) <- [(secKeyN 11, 1), (secKeyN 22, 2)]
+    , let k1 = secScalarN (100 + i)
+          k2 = secScalarN (200 + i)
     ]
 
 -- | A fresh one-shot secret nonce for a signer (a nonce signs once, so every run needs one).
-freshNonce :: (SecKey, (Integer, Integer), PubNonce) -> IO SecNonce
+freshNonce :: (SecKey, (SecScalar, SecScalar), PubNonce) -> IO SecNonce
 freshNonce (sk, (k1, k2), pn) = newSecNonce k1 k2 (secKeyPubKey sk) pn Nothing Nothing
 
-signerKey :: (SecKey, (Integer, Integer), PubNonce) -> SecKey
+signerKey :: (SecKey, (SecScalar, SecScalar), PubNonce) -> SecKey
 signerKey (sk, _, _) = sk
 
 keyAggCtx :: KeyAggContext
@@ -52,7 +57,7 @@ session :: Session
 session = newSession keyAggCtx (nonceAgg pubNonces) msg
 
 -- | Signs with a fresh nonce.
-signFresh :: Session -> (SecKey, (Integer, Integer), PubNonce) -> IO PartialSignature
+signFresh :: Session -> (SecKey, (SecScalar, SecScalar), PubNonce) -> IO PartialSignature
 signFresh ses s = freshNonce s >>= \sn -> unsafeRight <$> sign sn (signerKey s) ses
 
 -- | Nonce aggregation, session, both partial signatures, their verification, aggregation and BIP-340 verification.

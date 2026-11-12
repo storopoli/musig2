@@ -40,7 +40,7 @@ import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (
   secNoncePubNonce,
  )
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Point (gContext, hasEvenYBytes, isInfinity, mulGPublic, mulPublic)
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (curveOrder, hashToScalar, integerToBytes32, modQ, signScalar)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (SecScalar, curveOrder, hashToScalar, integerToBytes32, modQ, signScalar)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Types (
   AggNonce (..),
   PartialSignature (..),
@@ -149,7 +149,7 @@ signNonce verifyResult sn sk ses = do
 {- | BIP-327 @Sign@ with the nonce scalars \(k_1, k_2\) (in \([1, n)\)) and
 the matching public nonce, for a nonce bound to the secret key's public key.
 -}
-signScalars :: Bool -> Integer -> Integer -> PubNonce -> SecKey -> Session -> Either SignError PartialSignature
+signScalars :: Bool -> SecScalar -> SecScalar -> PubNonce -> SecKey -> Session -> Either SignError PartialSignature
 signScalars verifyResult k1 k2 pn sk ses = case keyAggCoefficient (sesKeyAgg ses) pk of
   Nothing -> Left SignerNotInSession
   Just a

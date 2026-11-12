@@ -52,7 +52,7 @@ import Crypto.Curve.Secp256k1.MuSig2.Internal.Error (DecodeError (..), NonceGenE
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Hash (hashAux, hashDetNonce, hashNonce)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.OneShot (OneShot, claimOneShot, isClaimed, newOneShot, peekOneShot)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Point (mulGSecret, sumPoints)
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (bytesToInteger, curveOrder, hashToScalar, integerToBytes32)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (SecScalar, secScalarFromBytes, secScalarFromBytesModQ, secScalarToBytes)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Types (
   AggNonce (..),
   Encode (..),
@@ -116,15 +116,18 @@ secNonceMessage = snMessage
 {- | Consumes the nonce: atomically marks it used, zero-fills its buffer and
 returns the scalars \((k_1, k_2)\). 'Nothing' if it was used before (through
 any copy, from any thread).
+
+The bytes go straight to constant-time t'SecScalar's (they are below \(n\),
+so the reduction leaves them unchanged).
 -}
-claimSecNonce :: SecNonce -> IO (Maybe (Integer, Integer))
+claimSecNonce :: SecNonce -> IO (Maybe (SecScalar, SecScalar))
 claimSecNonce sn = do
   claimed <- claimOneShot (snSecret sn)
   case claimed of
     Nothing -> pure Nothing
     Just bytes -> do
-      let !k1 = bytesToInteger (BS.take 32 bytes)
-          !k2 = bytesToInteger (BS.drop 32 bytes)
+      let !k1 = secScalarFromBytesModQ (BS.take 32 bytes)
+          !k2 = secScalarFromBytesModQ (BS.drop 32 bytes)
       pure (Just (k1, k2))
 
 -- | Whether the nonce has been used.
@@ -142,33 +145,36 @@ peekSecNonce = peekOneShot . snSecret
 Precondition: \(0 < k_1, k_2 < n\) and the public nonce is
 \((k_1 \cdot G, k_2 \cdot G)\).
 -}
-newSecNonce :: Integer -> Integer -> PubKey -> PubNonce -> Maybe XOnlyPubKey -> Maybe ByteString -> IO SecNonce
+newSecNonce :: SecScalar -> SecScalar -> PubKey -> PubNonce -> Maybe XOnlyPubKey -> Maybe ByteString -> IO SecNonce
 newSecNonce k1 k2 pk pn apk m = do
-  secret <- newOneShot (integerToBytes32 k1 <> integerToBytes32 k2)
+  secret <- newOneShot (secScalarToBytes k1 <> secScalarToBytes k2)
   pure (MkSecNonce secret pk pn apk m)
 
--- | The public nonce \((k_1 \cdot G, k_2 \cdot G)\); 'Nothing' unless both scalars are in \([1, n)\).
-pubNonceFromScalars :: Integer -> Integer -> Maybe PubNonce
+-- | The public nonce \((k_1 \cdot G, k_2 \cdot G)\); 'Nothing' if either scalar is zero.
+pubNonceFromScalars :: SecScalar -> SecScalar -> Maybe PubNonce
 pubNonceFromScalars k1 k2 = mkPubNonce <$> mulGSecret k1 <*> mulGSecret k2
 
--- | A fresh secret nonce from its scalars (both must be in \([1, n)\)), not bound to a session.
-secNonceFromScalars :: Integer -> Integer -> PubKey -> IO (Either DecodeError SecNonce)
-secNonceFromScalars k1 k2 pk = case (,) <$> check k1 <*> check k2 of
-  Left err -> pure (Left err)
-  Right _ -> case pubNonceFromScalars k1 k2 of
-    Nothing -> pure (Left ScalarOutOfRange)
-    Just pn -> Right <$> newSecNonce k1 k2 pk pn Nothing Nothing
- where
-  check k
-    | k == 0 = Left ScalarZero
-    | k < 0 || k >= curveOrder = Left ScalarOutOfRange
-    | otherwise = Right ()
+-- | A fresh secret nonce from its scalars (both must be non-zero), not bound to a session.
+secNonceFromScalars :: SecScalar -> SecScalar -> PubKey -> IO (Either DecodeError SecNonce)
+secNonceFromScalars k1 k2 pk = case pubNonceFromScalars k1 k2 of
+  Nothing -> pure (Left ScalarZero)
+  Just pn -> Right <$> newSecNonce k1 k2 pk pn Nothing Nothing
 
--- | A fresh secret nonce from the 97-byte BIP-327 encoding @bytes(32, k1) || bytes(32, k2) || pk@.
+{- | A fresh secret nonce from the 97-byte BIP-327 encoding
+@bytes(32, k1) || bytes(32, k2) || pk@. The scalars are range-checked in
+constant time (see 'secScalarFromBytes').
+-}
 secNonceFromBytes :: ByteString -> IO (Either DecodeError SecNonce)
-secNonceFromBytes b = case expectLength 97 b >> decode (BS.drop 64 b) of
+secNonceFromBytes b = case parts of
   Left err -> pure (Left err)
-  Right pk -> secNonceFromScalars (bytesToInteger (BS.take 32 b)) (bytesToInteger (BS.take 32 (BS.drop 32 b))) pk
+  Right (k1, k2, pk) -> secNonceFromScalars k1 k2 pk
+ where
+  parts = do
+    expectLength 97 b
+    pk <- decode (BS.drop 64 b)
+    k1 <- secScalarFromBytes (BS.take 32 b)
+    k2 <- secScalarFromBytes (BS.take 32 (BS.drop 32 b))
+    Right (k1, k2, pk)
 
 {- | Consumes the nonce and returns its 97-byte BIP-327 encoding; 'Nothing' if
 it was used before.
@@ -266,12 +272,12 @@ nonceGenCounter sk counter inputs =
 {- | The scalars \((k_1, k_2)\) of BIP-327 @NonceGen@ (reduced modulo \(n\),
 possibly zero) for 32 random bytes and validated inputs.
 -}
-nonceGenScalars :: ByteString -> PubKey -> NonceInputs -> (Integer, Integer)
+nonceGenScalars :: ByteString -> PubKey -> NonceInputs -> (SecScalar, SecScalar)
 nonceGenScalars rand pk inputs = (k 0, k 1)
  where
   rand' = case nonceSecKey inputs of
     Nothing -> rand
-    Just sk -> BS.packZipWith xor (integerToBytes32 (secKeyScalar sk)) (hashAux rand)
+    Just sk -> BS.packZipWith xor (secScalarToBytes (secKeyScalar sk)) (hashAux rand)
   pkBytes = pubKeyBytes pk
   aggpk = maybe BS.empty xOnlyBytes (nonceAggPubKey inputs)
   msgPrefixed = case nonceMessage inputs of
@@ -289,8 +295,8 @@ nonceGenScalars rand pk inputs = (k 0, k 1)
       , bigEndian 4 (BS.length extra)
       , extra
       ]
-  k :: Word8 -> Integer
-  k i = hashToScalar (hashNonce (prefix <> BS.singleton i))
+  k :: Word8 -> SecScalar
+  k i = secScalarFromBytesModQ (hashNonce (prefix <> BS.singleton i))
 
 {- | The scalars \((k_1, k_2)\) of BIP-327 @DeterministicSign@ (reduced
 modulo \(n\), possibly zero):
@@ -313,14 +319,14 @@ deterministicNonceScalars ::
   ByteString ->
   -- | @rand@ (32 bytes).
   Maybe ByteString ->
-  (Integer, Integer)
+  (SecScalar, SecScalar)
 deterministicNonceScalars sk aggOther aggpk msg rand = (k 0, k 1)
  where
-  skBytes = integerToBytes32 (secKeyScalar sk)
+  skBytes = secScalarToBytes (secKeyScalar sk)
   sk' = maybe skBytes (BS.packZipWith xor skBytes . hashAux) rand
   prefix = BS.concat [sk', aggNonceBytes aggOther, xOnlyBytes aggpk, bigEndian 8 (BS.length msg), msg]
-  k :: Word8 -> Integer
-  k i = hashToScalar (hashDetNonce (prefix <> BS.singleton i))
+  k :: Word8 -> SecScalar
+  k i = secScalarFromBytesModQ (hashDetNonce (prefix <> BS.singleton i))
 
 -- | @bytes(n, x)@: the \(n\)-byte big-endian encoding of a length or counter.
 bigEndian :: (Integral a, Bits a) => Int -> a -> ByteString
