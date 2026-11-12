@@ -44,8 +44,8 @@ A sample GHCi session:
 > let params2 = MuSig2.defaultSecNonceGenParams pub2
 > Right secnonce1 <- MuSig2.secNonceGen params1
 > Right secnonce2 <- MuSig2.secNonceGen params2
-> let pubnonce1 = MuSig2.publicNonce secnonce1
-> let pubnonce2 = MuSig2.publicNonce secnonce2
+> let Right pubnonce1 = MuSig2.publicNonce secnonce1
+> let Right pubnonce2 = MuSig2.publicNonce secnonce2
 > let pubnonces = [pubnonce1, pubnonce2]
 >
 > -- aggregate nonces and create session context
