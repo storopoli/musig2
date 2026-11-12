@@ -24,6 +24,8 @@ module Crypto.Curve.Secp256k1.MuSig2.Internal (
   -- utils/misc
   isEvenPub,
   xBytes,
+  cbytesExt,
+  mulScalar,
   bytesToInteger,
   integerToBytes32,
   xorByteStrings,
@@ -174,6 +176,27 @@ isEvenPub pub = case BS.unpack (serialize_point pub) of
 -- | Gets the X-coordinate from a 'Pub'lic key as 'ByteString'
 xBytes :: Pub -> ByteString
 xBytes pk = BS.drop 1 $ serialize_point pk
+
+{- | Serializes a point as 33 bytes, encoding the point at infinity as 33 zero
+bytes (@cbytes_ext@ in
+[BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki)).
+-}
+cbytesExt :: Projective -> ByteString
+cbytesExt p
+  | p == _CURVE_ZERO = BS.replicate 33 0
+  | otherwise = serialize_point p
+
+{- | Multiplies a point by a scalar reduced modulo the curve order.
+
+Unlike 'mul', a scalar that is \(0 \bmod n\) yields the point at infinity
+instead of failing.
+-}
+mulScalar :: Projective -> Integer -> Maybe Projective
+mulScalar p k
+  | k' == 0 = Just _CURVE_ZERO
+  | otherwise = mul p (fromInteger k')
+ where
+  k' = modQ k
 
 -- | The secp256k1 curve order (a mathematical constant).
 curveOrder :: Integer

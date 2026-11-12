@@ -5,6 +5,7 @@ import AggPartials (testAggPartials)
 import AggPartialsProperty (propertyAggPartials)
 import AggPubkeys (testAggPubkeys)
 import ApplyTweaks (testApplyTweaks)
+import Bip327Regressions (testBip327Regressions)
 import MonoidProjective (propertyMonoidProjective)
 import MonoidPubNonce (propertyMonoidPubNonce)
 import NonceGen (testNonceGen)
@@ -19,7 +20,7 @@ import Tweak (testTweak)
 
 -- | Unit tests.
 unitTests :: TestTree
-unitTests = testGroup "Unit Tests" [testSortPubkeys, testAggPubkeys, testParityPub, testApplyTweaks, testNonceGen, testAggNonces, testAggPartials, testSignVerify, testTweak]
+unitTests = testGroup "Unit Tests" [testSortPubkeys, testAggPubkeys, testParityPub, testApplyTweaks, testNonceGen, testAggNonces, testAggPartials, testSignVerify, testTweak, testBip327Regressions]
 
 -- | Property tests.
 propertyTests :: TestTree

@@ -94,9 +94,8 @@ makeValidTestCase i (keyIndices, nonceIndices, tweakIndices, isXOnly, signerInde
 
     signerPub @?= (selectedKeys !! signerIndex)
     generatedSigVerifies @?= Right True
-    if expectedSigVerifies == Right True
-      then assertBool ("Generated signature matches expected or remains valid: " <> comment) (generatedSig == expectedSignature || generatedSigVerifies == Right True)
-      else assertBool ("Expected signature from test vector doesn't verify, but generated signature does: " <> comment) (generatedSigVerifies == Right True)
+    expectedSigVerifies @?= Right True
+    assertEqual ("Generated signature matches test vector: " <> comment) expectedSignature generatedSig
 
 -- | Creates test case from error test vector data.
 makeErrorTestCase :: Int -> ([Int], [Bool], String, String) -> TestTree

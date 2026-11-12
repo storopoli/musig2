@@ -124,7 +124,7 @@ module Crypto.Curve.Secp256k1.MuSig2 (
   aggNonces,
 ) where
 
-import Control.Monad (foldM)
+import Control.Monad (foldM, when)
 import Crypto.Curve.Secp256k1 (Projective, Pub, add, derive_pub, mul, neg, serialize_point, _CURVE_G, _CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2.Internal
 import Data.Binary.Put (
@@ -216,16 +216,14 @@ aggPartials partials ctx =
           keyCtx = cachedKeyAggCtx ctx
           aggPk = q keyCtx
           taccVal = maybe 0 getTweak $ tacc keyCtx
-          gaccVal = gacc keyCtx
         -- BIP 327: Let g = 1 if has_even_y(Q), otherwise let g = -1 mod n
         evenAggPk <- liftMaybe InvalidPointFormat (isEvenPub aggPk)
         let
           g = if evenAggPk then 1 else curveOrder - 1
-          -- Apply accumulated parity factor
-          g' = modQ (g * gaccVal)
           sSum = modQ $ sum validPartials
-          -- BIP 327: Let s = s₁ + ... + sᵤ + e⋅g'⋅tacc mod n
-          s = modQ (sSum + e * g' * taccVal)
+          -- BIP 327: Let s = s₁ + ... + sᵤ + e⋅g⋅tacc mod n
+          -- (gacc must not appear here: ApplyTweak already folds it into tacc)
+          s = modQ (sSum + e * g * taccVal)
           left = xBytes nonce
           right = integerToBytes32 s
         Right (left <> right)
@@ -240,6 +238,10 @@ aggPartials partials ctx =
 The partial signature returned from this function is a potentially-zero
 scalar value which can then be passed to other signers for verification
 and aggregation.
+
+Fails with 'SecretKeyPublicKeyMismatch' if the public key derived from the
+secret key differs from the one the 'SecNonce' is bound to, or is not one of
+the session's public keys.
 -}
 sign ::
   -- | Secret nonce.
@@ -266,7 +268,7 @@ sign secnonce sk ctx =
     _ <- validateSecretScalar "k2" k2
     d' <- validateSecretScalar "secret key" (unSecKey sk)
     p <- liftMaybe KeyDerivationFailed $ derive_pub (fromInteger d')
-    if p /= boundPk
+    if p /= boundPk || p `notElem` publicKeys
       then Left SecretKeyPublicKeyMismatch
       else do
         let
@@ -365,9 +367,10 @@ partialSigVerifyInternal partial pubnonce pk ctx =
       g = if oddAggPk then curveOrder - 1 else 1
       -- Apply parity accumulator: gacc is accumulated parity factor
       g' = modQ (g * gaccVal)
-    r2b <- liftMaybe (ScalarMultiplicationFailed "r2 * b") $ mul r2' (fromInteger b)
-    sG <- liftMaybe (ScalarMultiplicationFailed "s * G") $ mul _CURVE_G (fromInteger s)
-    pkMul <- liftMaybe (ScalarMultiplicationFailed "pk multiplication") $ mul pk (fromInteger (modQ (e * a * g')))
+    when (r1' == _CURVE_ZERO || r2' == _CURVE_ZERO) $ Left InvalidPointFormat
+    r2b <- liftMaybe (ScalarMultiplicationFailed "r2 * b") $ mulScalar r2' b
+    sG <- liftMaybe (ScalarMultiplicationFailed "s * G") $ mulScalar _CURVE_G s
+    pkMul <- liftMaybe (ScalarMultiplicationFailed "pk multiplication") $ mulScalar pk (e * a * g')
     let
       re' = add r1' r2b
       -- Negate individual nonce if final aggregate nonce has odd Y
@@ -498,9 +501,10 @@ getSigningNonce ctx = do
   let
     b = getSigningNonceCoeff ctx
     aggNonce = ctx.aggNonce
-    aggNonce' = if aggNonce.r1 == _CURVE_ZERO then PubNonce _CURVE_G aggNonce.r2 else aggNonce
-  r2b <- liftMaybe (ScalarMultiplicationFailed "r2 * b") $ mul aggNonce'.r2 (fromInteger b)
-  let finalNonce = add aggNonce'.r1 r2b
+  -- BIP 327: R' = R1 + b⋅R2, where R1 and R2 may be the point at infinity
+  r2b <- liftMaybe (ScalarMultiplicationFailed "r2 * b") $ mulScalar aggNonce.r2 b
+  let finalNonce = add aggNonce.r1 r2b
+  -- BIP 327: R = G if R' is infinite
   Right (if finalNonce == _CURVE_ZERO then _CURVE_G else finalNonce)
 
 {- | Gets the signing nonce coefficient following
@@ -510,10 +514,10 @@ getSigningNonceCoeff :: SessionContext -> Integer
 getSigningNonceCoeff ctx =
   let
     aggNonce = ctx.aggNonce
-    aggNonce' = if aggNonce.r1 == _CURVE_ZERO then PubNonce _CURVE_G aggNonce.r2 else aggNonce
     aggPubKey = q (cachedKeyAggCtx ctx)
     msg = ctx.msg
-    nonceBytes = serialize_point aggNonce'.r1 <> serialize_point aggNonce'.r2
+    -- BIP 327: aggnonce is encoded with cbytes_ext (infinity as 33 zero bytes)
+    nonceBytes = cbytesExt aggNonce.r1 <> cbytesExt aggNonce.r2
     qBytes = xBytes aggPubKey
     preimage = nonceBytes <> qBytes <> msg
    in
@@ -564,8 +568,8 @@ applyTweak ctx newTweak = do
   case newTweak of
     PlainTweak _ -> do
       let g = 1
-      pubkeyMul <- liftMaybe (ScalarMultiplicationFailed "pubkey * g") $ mul pubkey (fromInteger g)
-      tG <- liftMaybe (ScalarMultiplicationFailed "t * G") $ mul _CURVE_G (fromInteger t)
+      pubkeyMul <- liftMaybe (ScalarMultiplicationFailed "pubkey * g") $ mulScalar pubkey g
+      tG <- liftMaybe (ScalarMultiplicationFailed "t * G") $ mulScalar _CURVE_G t
       let tweakedPk = add pubkeyMul tG
           newAccTweak = modQ (t + (g * accTweakVal))
           newGacc = modQ (g * gaccIn)
@@ -575,8 +579,8 @@ applyTweak ctx newTweak = do
     XOnlyTweak _ -> do
       evenPubkey <- liftMaybe InvalidPointFormat (isEvenPub pubkey)
       let g = if evenPubkey then 1 else curveOrder - 1
-      pubkeyMul <- liftMaybe (ScalarMultiplicationFailed "pubkey * g") $ mul pubkey (fromInteger g)
-      tG <- liftMaybe (ScalarMultiplicationFailed "t * G") $ mul _CURVE_G (fromInteger t)
+      pubkeyMul <- liftMaybe (ScalarMultiplicationFailed "pubkey * g") $ mulScalar pubkey g
+      tG <- liftMaybe (ScalarMultiplicationFailed "t * G") $ mulScalar _CURVE_G t
       let tweakedPk = add pubkeyMul tG
           newAccTweak = modQ (t + (g * accTweakVal))
           newGacc = modQ (g * gaccIn)
@@ -791,12 +795,18 @@ instance Monoid PubNonce where
 
 {- | Aggregates a 'Traversable' of 'PubNonce's using the
 [Nonce Aggregation algorithm in BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
+
+Fails with 'InvalidPointFormat' if any individual 'PubNonce' contains the
+point at infinity. The resulting aggregate nonce may contain the point at
+infinity.
 -}
 aggNonces :: (Traversable t) => t PubNonce -> Either MuSig2Error PubNonce
 aggNonces nonces
   | Seq.null noncesSeq = Left EmptyNonceCollection
+  | any hasInfinity noncesSeq = Left InvalidPointFormat
   | otherwise = case Seq.viewl noncesSeq of
       Seq.EmptyL -> Left EmptyNonceCollection
       x Seq.:< xs -> Right $! foldl' (<>) x xs
  where
   noncesSeq = Seq.fromList (toList nonces)
+  hasInfinity (PubNonce a b) = a == _CURVE_ZERO || b == _CURVE_ZERO
