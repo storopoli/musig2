@@ -58,10 +58,9 @@ is valid by construction.
 
 == Usage
 
-Two signers (this example is compiled and run by the test suite):
+Two signers (this example is compiled and run by the test suite; it needs
+the @OverloadedStrings@ language extension):
 
-> {-# LANGUAGE OverloadedStrings #-}
->
 > import Control.Exception (Exception, throwIO)
 > import qualified Crypto.Curve.Secp256k1.MuSig2 as MuSig2
 > import qualified Data.ByteString as BS
