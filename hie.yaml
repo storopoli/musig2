@@ -3,6 +3,9 @@ cradle:
     - path: "lib"
       component: "lib:musig2"
 
+    - path: "internal"
+      component: "musig2:lib:internal"
+
     - path: "test"
       component: "musig2:test:musig2-tests"
 

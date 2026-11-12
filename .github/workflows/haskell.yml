@@ -83,6 +83,7 @@ jobs:
         with:
           pattern: |
             lib/**/*.hs
+            internal/**/*.hs
             test/**/*.hs
             bench/**/*.hs
 
@@ -141,5 +142,5 @@ jobs:
       - name: Run HLint
         uses: haskell-actions/hlint-run@eaca4cfbf4a69f4eb875df38b6bc3e1657020378 # v2.4.10
         with:
-          path: '["lib/", "test/", "bench/"]'
+          path: '["lib/", "internal/", "test/", "bench/"]'
           fail-on: warning

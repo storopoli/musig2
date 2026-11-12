@@ -1,7 +1,86 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (unreleased)
 
+A redesigned, hard-to-misuse API. Every value of an exported type is valid by
+construction, secrets cannot be printed, compared or encoded, public values
+have BIP-0327 byte encodings, and each kind of failure has its own error type.
+This release breaks every 0.2 program; the migration table below maps the old
+names to the new ones.
+
+* Breaking API changes (old -> new):
+  - `SecKey` (a newtype over `Integer` with `Num`, `Read`, `Eq`, `Ord`) ->
+    opaque `SecKey`: `secKeyFromBytes` (32 bytes, `0 < d < n`),
+    `secKeyToBytes`, `secKeyPubKey`. No `Show`, `Eq`, `Ord`, `Read`, `Num`
+    or `Generic`.
+  - `Pub` (ppad's `Projective`) -> `PubKey` (valid, finite, `Eq`/`Ord`/`Show`
+    on its 33-byte encoding) and `XOnlyPubKey`; `pubKeyFromPoint` and
+    `pubKeyPoint` convert from and to `ppad-secp256k1` points
+  - New `Encode` class (`encode`/`decode`) with the BIP-0327 byte formats for
+    `PubKey`, `XOnlyPubKey`, `PubNonce`, `AggNonce`, `PartialSignature`,
+    `Signature` and `Tweak`. Decoders reject non-canonical input: 32- and
+    65-byte public keys, invalid points, infinity where a finite point is
+    required, scalars `>= n`.
+  - `mkKeyAggContext pks mTweak` -> `keyAgg :: NonEmpty PubKey -> Either KeyAggError KeyAggContext`,
+    then `applyPlainTweak`/`applyXOnlyTweak`/`applyTaprootTweak`
+  - `sortPublicKeys` -> `keySort :: NonEmpty PubKey -> NonEmpty PubKey`
+  - `aggregatedPubkey` -> `aggPubKey` (possibly tweaked `Q`) and
+    `aggXOnlyPubKey` (what the final signature verifies against); new
+    `keyAggPubKeys` and `signerIndex`
+  - `Tweak (XOnlyTweak t | PlainTweak t)` and `applyTweak ctx tweak` ->
+    opaque `Tweak` (`tweakFromBytes`, `0 <= t < n`) with `applyPlainTweak`
+    and `applyXOnlyTweak`. New `applyTaprootTweak` computes the BIP-0341
+    TapTweak from the current key and an optional merkle root.
+  - Tweaks are given once, to the `KeyAggContext`; sessions no longer take a
+    tweak list
+  - `SecNonceGenParams`, `defaultSecNonceGenParams`, `secNonceGen`,
+    `publicNonce` -> `nonceGen :: PubKey -> NonceInputs -> IO (Either NonceGenError (SecNonce, PubNonce))`
+    with `NonceInputs` (`nonceSecKey`, `nonceAggPubKey` (x-only, as in
+    BIP-0327), `nonceMessage`, `nonceExtraInput`) and `noNonceInputs`
+  - `mkSecNonce` and `secNonceGenWithRand` removed from the public API:
+    secret nonces only come from `nonceGen`
+  - `aggNonces` -> `nonceAgg :: NonEmpty PubNonce -> AggNonce` (total);
+    aggregate nonces have their own type, `AggNonce`, whose points may be
+    infinity
+  - `SessionContext(..)` and `mkSessionContext aggNonce pks tweaks msg` ->
+    opaque `Session` from `newSession :: KeyAggContext -> AggNonce -> ByteString -> Session`
+    (total), which computes the session values once; `sessionKeyAgg`
+  - `sign` now returns `Either SignError PartialSignature`;
+    `PartialSignature` is opaque instead of `Integer`
+  - `partialSigVerify psig nonces pks tweaks msg i` ->
+    `partialSigVerify :: Session -> PubKey -> PubNonce -> PartialSignature -> Bool`,
+    without rebuilding the session per call
+  - `aggPartials psigs ctx` -> `partialSigAgg :: Session -> NonEmpty PartialSignature -> Signature`
+    (total)
+  - New `verify :: XOnlyPubKey -> ByteString -> Signature -> Bool` (BIP-0340)
+  - `MuSig2Error` -> `DecodeError`, `KeyAggError`, `NonceGenError` and
+    `SignError`, with no `String` or secret payloads and `Exception`
+    instances. `sign` reports `SecNonceKeyMismatch`, `SignerNotInSession` or
+    `SelfVerificationFailed` instead of the misleading
+    `SecretKeyPublicKeyMismatch`/`PublicNonceGenerationFailed`.
+  - Removed the orphan `Ord`, `Semigroup` and `Monoid` instances on ppad's
+    `Projective`, and the `Semigroup`/`Monoid` instances on `PubNonce`
+  - `NFData` instances for all exported types
+* Other changes:
+  - Key aggregation is `O(n)` instead of `O(n^2)`: the key list is hashed
+    once and keys with coefficient 1 are not multiplied (200 keys: ~600 ms
+    -> ~50 ms)
+  - Public scalar multiplications are variable-time; multiplications of the
+    generator use ppad's precomputed (timing-safe) wNAF tables. A 2-of-2
+    session from nonce aggregation to the verified signature is ~5x faster.
+  - `nonceGen` rejects extra input longer than `2^32 - 1` bytes instead of
+    silently truncating its length (`NonceExtraInputTooLong`)
+  - All fields holding points or scalars are strict, and nonce aggregation
+    folds strictly
+  - `pubKeyFromPoint` rejects points that are not on the curve
+  - The implementation lives in a private `internal` library used by the
+    tests and benchmarks
+  - The README and module examples are compiled and run by the test suite
+  - Tests: official BIP-0327 vectors for invalid encodings now run, checking
+    that decoding fails for exactly the contribution the vector blames;
+    property tests run complete multi-signer sessions with random plain,
+    x-only and Taproot tweaks and check the final signature, and corrupt
+    inputs to check that verification fails
 * Drop support for GHC 9.8 (`base >= 4.20`); tested with GHC 9.10.3, 9.12.4
   and 9.14.1
 * Security hardening:
