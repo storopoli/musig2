@@ -8,7 +8,10 @@ upstream commit and checksums).
 Every case runs with exact-output assertions. Invalid encodings are decoded
 with 'decode', contribution by contribution in the order the reference
 implementation parses them, and the first failure must be exactly the
-contribution (and signer) the vector blames.
+contribution (and signer) the vector blames. The @NonceAgg@ and
+@PartialSigAgg@ cases also run through
+"Crypto.Curve.Secp256k1.MuSig2.Coordinator": it must produce the expected
+aggregate nonce and signature, and blame exactly the vector's signer.
 
 The parsers reject unknown fields, unknown error types and unknown error
 messages, so an updated vector file cannot be silently half-run.
@@ -17,6 +20,18 @@ module OfficialVectors (officialVectorTests) where
 
 import Control.Monad (filterM, foldM, unless, void, zipWithM, (>=>))
 import Crypto.Curve.Secp256k1.MuSig2
+import Crypto.Curve.Secp256k1.MuSig2.Coordinator (
+  Blame (..),
+  BlameReason (..),
+  CollectedNonces,
+  collectedAggNonce,
+  finishNonceRound,
+  finishSigRound,
+  newNonceRound,
+  newSigRound,
+  receivePartialSig,
+  receivePubNonce,
+ )
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (secNoncePubNonce)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (bytesToInteger, curveOrder)
 import Crypto.Curve.Secp256k1.MuSig2.Unsafe (nonceGenWithRand, secNonceFromBytes, secNonceToBytes)
@@ -30,6 +45,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BC
+import Data.Either (lefts)
 import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (fromMaybe)
@@ -38,7 +54,7 @@ import System.Environment (lookupEnv)
 import System.FilePath ((</>))
 import Test.Tasty
 import Test.Tasty.HUnit
-import Util (hexOf)
+import Util (hexOf, secKeyFromInt)
 
 -- Locating and loading the vector files ---------------------------------------
 
@@ -707,11 +723,33 @@ nonceAggTests v = zipWith validCase [0 ..] (naValid v) <> zipWith errorCase [0 .
     nonces <- expectRight "vector" (select "pnonce" (naPnonces v) idxs)
     pns <- expectLib "decode" (traverse decodeF nonces >>= nonEmptyF "pubnonce")
     assertBytes "aggnonce (infinity as 33 zero bytes)" expected (encode (nonceAgg pns))
-  errorCase i (idxs, err, comment)
-    | isEncodingError err = encodingCase name err (contributions "pubnonce" asPubNonce (naPnonces v) idxs)
-    | otherwise = testCase name (assertFailure ("no library check for " <> show err))
+    ctx <- expectLib "KeyAgg" (placeholderKeyAgg (length nonces))
+    collected <- expectLib "coordinator" (coordinateNonces ctx nonces)
+    assertBytes "coordinator aggnonce" expected (encode (collectedAggNonce collected))
+  errorCase i (idxs, err, comment) = case err of
+    InvalidContribution (Just signer) "pubnonce" -> testGroup name [encodingCase "decode" err contribs, coordinatorCase signer]
+    _ -> testCase name (assertFailure ("no library check for " <> show err))
    where
     name = caseName "error" (i :: Int) comment
+    contribs = contributions "pubnonce" asPubNonce (naPnonces v) idxs
+    -- Each nonce is received on its own: the coordinator blames exactly the vector's signer.
+    coordinatorCase signer = testCase "the coordinator blames the signer" $ do
+      nonces <- expectRight "vector" (select "pnonce" (naPnonces v) idxs)
+      ctx <- expectLib "KeyAgg" (placeholderKeyAgg (length nonces))
+      lefts [receivePubNonce j b (newNonceRound ctx) | (j, b) <- zip [0 ..] nonces]
+        @?= [Blame signer (InvalidPubNonceEncoding InvalidPoint)]
+
+{- | A key aggregation context for @u@ signers, for nonce aggregation vectors
+(which have no keys: nonce aggregation does not depend on them).
+-}
+placeholderKeyAgg :: Int -> Either Failure KeyAggContext
+placeholderKeyAgg u = nonEmptyF "pubkey" [secKeyPubKey (secKeyFromInt k) | k <- [1 .. toInteger u]] >>= first FKeyAgg . keyAgg
+
+-- | Round one of the coordinator, receiving the encoded nonces in signer order.
+coordinateNonces :: KeyAggContext -> [ByteString] -> Either String CollectedNonces
+coordinateNonces ctx nonces = do
+  r <- first show (foldM (\r (j, b) -> receivePubNonce j b r) (newNonceRound ctx) (zip [0 ..] nonces))
+  first show (finishNonceRound r)
 
 signVerifyTests :: SignVerifyVectors -> [TestTree]
 signVerifyTests v =
@@ -859,10 +897,31 @@ sigAggTests v = zipWith (run "valid") [0 ..] (saValid v) <> zipWith (run "error"
             (_, ctx) <- aggregate
             sig <- expectLib "decode sig" (decodeF expected)
             assertBool "verify" (verify (aggXOnlyPubKey ctx) (saMsg v) sig)
+        , testCase "the coordinator reproduces the aggnonce, accepts every partial signature and returns the signature" $ do
+            (keys, nonces, tweaks, psigs) <- inputs
+            ctx <- expectLib "KeyAgg" (keyAggBytes keys tweaks)
+            collected <- expectLib "round one" (coordinateNonces ctx nonces)
+            assertBytes "aggnonce" (sacAggnonce c) (encode (collectedAggNonce collected))
+            r <- expectLib "round two" (foldM (\r (j, b) -> receivePartialSig j b r) (newSigRound collected (saMsg v)) (zip [0 ..] psigs))
+            sig <- expectLib "finishSigRound" (finishSigRound r)
+            assertBytes "sig" expected (encode sig)
         ]
-    Left err
-      | isEncodingError err -> encodingCase name err (contributions "psig" asPsig (saPsigs v) (sacPsigs c))
-      | otherwise -> testCase name (assertFailure ("no library check for " <> show err))
+    Left err@(InvalidContribution (Just signer) "psig") ->
+      testGroup
+        name
+        [ encodingCase "decode" err (contributions "psig" asPsig (saPsigs v) (sacPsigs c))
+        , -- PartialSigAgg only range-checks, so the other partial signatures
+          -- of the vector need not verify in this session (and do not): only
+          -- the vector's signer is checked.
+          testCase "the coordinator blames the signer" $ do
+            (keys, nonces, tweaks, psigs) <- inputs
+            ctx <- expectLib "KeyAgg" (keyAggBytes keys tweaks)
+            collected <- expectLib "round one" (coordinateNonces ctx nonces)
+            psig <- expectRight "vector" (at "psig" psigs signer)
+            lefts [receivePartialSig signer psig (newSigRound collected (saMsg v))]
+              @?= [Blame signer (InvalidPartialSigEncoding ScalarOutOfRange)]
+        ]
+    Left err -> testCase name (assertFailure ("no library check for " <> show err))
    where
     name = caseName section i (sacComment c)
     inputs = expectRight "vector" $ do
