@@ -119,9 +119,13 @@ Haddocks (API documentation, etc.) are hosted at [hackage][hackage].
 ## Security
 
 Read the security considerations in the
-[module documentation][haddock] before using the library: each secret nonce
-must be used for at most one `sign`, and the scalar arithmetic on secrets is
-not constant-time yet.
+[module documentation][haddock] before using the library. Secret nonces are
+one-shot: `sign` atomically consumes the nonce (and zero-fills its buffer)
+before anything else, so a second `sign` with the same nonce, from any copy
+or thread, fails with `SecNonceAlreadyUsed`. The
+`Crypto.Curve.Secp256k1.MuSig2.Unsafe` module holds the escape hatches this
+cannot cover (caller-supplied randomness, counters, exporting secret nonces).
+The scalar arithmetic on secrets is not constant-time yet.
 
 The API is hard to misuse by construction: every value of an exported type is
 valid (decoders and smart constructors check points, scalar ranges and
@@ -131,8 +135,7 @@ and errors carry no secrets.
 The test suite runs the official [BIP-0327][bip327] test vectors, loaded
 from the upstream JSON files, with exact-output assertions; invalid-encoding
 vectors check that decoding fails for exactly the contribution the vector
-blames. `DeterministicSign` vectors are not supported yet; the test suite
-lists them explicitly. [`QuickCheck`][quickcheck] properties run complete
+blames, including the `DeterministicSign` vectors. [`QuickCheck`][quickcheck] properties run complete
 multi-signer sessions with random tweaks (plain, x-only and Taproot) and check
 the final signature with BIP-340 verification.
 Elliptic curve operations are done by the
