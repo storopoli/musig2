@@ -105,7 +105,7 @@ format-nix:
 # Builds the documentation with `haddock` and opens in the browser.
 [group('docs')]
 doc:
-    cabal haddock --open
+    cabal haddock --open musig2:lib:musig2
 
 # Publish docs to Hackage
 [group('docs')]
@@ -116,8 +116,9 @@ publish-docs:
     dir=$(mktemp -d dist-docs.XXXXXX)
     trap 'rm -r "$dir"' EXIT
 
-    # assumes cabal 2.4 or later
-    cabal v2-haddock --builddir="$dir" --haddock-for-hackage --enable-doc
+    # assumes cabal 2.4 or later. Name the public library: without a target,
+    # the private internal library's docs overwrite the tarball.
+    cabal v2-haddock musig2:lib:musig2 --builddir="$dir" --haddock-for-hackage --enable-doc
 
     cabal upload -d --publish $dir/*-docs.tar.gz
 
