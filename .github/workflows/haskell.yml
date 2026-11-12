@@ -16,9 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ['9.8', '9.10', '9.12', '9.14']
-        # ubuntu-24.04: llvm-15 is not packaged for ubuntu-latest (26.04)
-        os: [ubuntu-24.04, macos-latest]
+        ghc: ['9.10', '9.12', '9.14']
+        os: [ubuntu-latest, macos-latest]
         llvm: [false, true]
     permissions:
       contents: read
@@ -29,18 +28,21 @@ jobs:
         with:
           persist-credentials: false
 
+      # Use the distribution's default LLVM (Ubuntu 26.04: LLVM 21, Homebrew:
+      # latest) like the Nix workflow does. It is newer than what GHC officially
+      # supports (9.10: <=15, 9.12: <=19, 9.14: <=20), so GHC prints an
+      # "unsupported version of LLVM" warning, but code generation still works.
       - name: Install LLVM (Linux)
         if: matrix.llvm && runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-15
-          echo "/usr/lib/llvm-15/bin" >> $GITHUB_PATH
+          sudo apt-get install -y llvm
 
       - name: Install LLVM (macOS)
         if: matrix.llvm && runner.os == 'macOS'
         run: |
-          brew install llvm@15
-          echo "$(brew --prefix llvm@15)/bin" >> $GITHUB_PATH
+          brew install llvm
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
 
       - name: Setup Haskell
         uses: haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d # v2.12.1
@@ -101,6 +103,7 @@ jobs:
         uses: haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d # v2.12.1
         id: setup-cabal-fmt
         with:
+          # cabal-fmt does not build with GHC >= 9.10 yet (base < 4.20)
           ghc-version: '9.8'
           cabal-version: 'latest'
 
