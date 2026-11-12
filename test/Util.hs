@@ -18,13 +18,13 @@ module Util (
 ) where
 
 import Control.Monad (unless)
+import Crypto.Curve.Secp256k1.MuSig2 (DecodeError, Encode (..), PartialSignature, PubKey, PubNonce, SecKey, SecNonce, Tweak, secKeyFromBytes)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (pubNonceFromScalars, secNonceFromScalars)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (SecScalar, fieldSize, integerToBytes32, secScalarFromBytes)
 import Data.Aeson (FromJSON (..), Value, withObject)
 import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KeyMap
 import Data.Aeson.Types (Object, Parser)
-import Crypto.Curve.Secp256k1.MuSig2 (DecodeError, Encode (..), PartialSignature, PubKey, PubNonce, SecKey, SecNonce, Tweak, secKeyFromBytes)
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (pubNonceFromScalars, secNonceFromScalars)
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (SecScalar, fieldSize, integerToBytes32, secScalarFromBytes)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BC
