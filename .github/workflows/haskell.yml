@@ -19,23 +19,6 @@ jobs:
         ghc: ['9.10', '9.12', '9.14']
         os: [ubuntu-latest, macos-latest]
         llvm: [false, true]
-        # Newest LLVM each GHC supports (its configure.ac LlvmMinVersion and
-        # LlvmMaxVersion: 9.10 13-15, 9.12 13-19, 9.14 13-20) that the runner
-        # can install.
-        include:
-          - ghc: '9.10'
-            llvm-version: '15'
-          - ghc: '9.12'
-            llvm-version: '19'
-          - ghc: '9.14'
-            llvm-version: '20'
-        exclude:
-          # ubuntu-latest (26.04) only packages LLVM >= 17, which GHC 9.10 does
-          # not support. Its LLVM backend is still covered on macOS and by the
-          # Nix workflow.
-          - ghc: '9.10'
-            os: ubuntu-latest
-            llvm: true
     permissions:
       contents: read
       actions: read
@@ -45,22 +28,21 @@ jobs:
         with:
           persist-credentials: false
 
+      # Use the distribution's default LLVM (Ubuntu 26.04: LLVM 21, Homebrew:
+      # latest) like the Nix workflow does. It is newer than what GHC officially
+      # supports (9.10: <=15, 9.12: <=19, 9.14: <=20), so GHC prints an
+      # "unsupported version of LLVM" warning, but code generation still works.
       - name: Install LLVM (Linux)
         if: matrix.llvm && runner.os == 'Linux'
-        env:
-          LLVM_VERSION: ${{ matrix.llvm-version }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y "llvm-${LLVM_VERSION}"
-          echo "/usr/lib/llvm-${LLVM_VERSION}/bin" >> "$GITHUB_PATH"
+          sudo apt-get install -y llvm
 
       - name: Install LLVM (macOS)
         if: matrix.llvm && runner.os == 'macOS'
-        env:
-          LLVM_VERSION: ${{ matrix.llvm-version }}
         run: |
-          brew install "llvm@${LLVM_VERSION}"
-          echo "$(brew --prefix "llvm@${LLVM_VERSION}")/bin" >> "$GITHUB_PATH"
+          brew install llvm
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
 
       - name: Setup Haskell
         uses: haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d # v2.12.1
