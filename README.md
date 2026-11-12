@@ -14,10 +14,7 @@ from [BIP-0327][bip327].
 A sample GHCi session:
 
 ```haskell
-> -- pragmas and b16 import for illustration only; not required
 > :set -XOverloadedStrings
-> :set -XBangPatterns
-> import qualified Data.ByteString.Base16 as B16
 >
 > -- import qualified
 > import qualified Crypto.Curve.Secp256k1.MuSig2 as MuSig2
