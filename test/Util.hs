@@ -13,8 +13,15 @@ module Util (
   failsWith,
   decodeEach,
   isOnCurveX,
+  Hex (..),
+  strictObject,
 ) where
 
+import Control.Monad (unless)
+import Data.Aeson (FromJSON (..), Value, withObject)
+import qualified Data.Aeson.Key as Key
+import qualified Data.Aeson.KeyMap as KeyMap
+import Data.Aeson.Types (Object, Parser)
 import Crypto.Curve.Secp256k1.MuSig2 (DecodeError, Encode (..), PartialSignature, PubKey, PubNonce, SecKey, SecNonce, Tweak, secKeyFromBytes)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (pubNonceFromScalars, secNonceFromScalars)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (SecScalar, fieldSize, integerToBytes32, secScalarFromBytes)
@@ -80,3 +87,18 @@ isOnCurveX x = x < fieldSize && powMod (x * x * x + 7) ((fieldSize - 1) `div` 2)
 -- | Runs an action that must fail with exactly the given error.
 failsWith :: (Eq e, Show e) => e -> IO (Either e a) -> Assertion
 failsWith expected action = action >>= \result -> either Just (const Nothing) result @?= Just expected
+
+-- | Hex-encoded bytes in JSON.
+newtype Hex = Hex {unHex :: ByteString}
+
+instance FromJSON Hex where
+  parseJSON v = do
+    s <- parseJSON v
+    either (fail . (("invalid hex " <> show s <> ": ") <>)) (pure . Hex) (B16.decode (BC.pack s))
+
+-- | Like 'withObject', but fails on fields outside the allowed list.
+strictObject :: String -> [Key.Key] -> (Object -> Parser a) -> Value -> Parser a
+strictObject what allowed k = withObject what $ \o -> do
+  let unknown = filter (`notElem` allowed) (KeyMap.keys o)
+  unless (null unknown) $ fail (what <> ": unexpected fields " <> show (map Key.toString unknown))
+  k o

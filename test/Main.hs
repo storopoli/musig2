@@ -3,6 +3,7 @@ module Main where
 import ApplyTweaks (testApplyTweaks)
 import Bip327Regressions (testBip327Regressions)
 import CoordinatorRounds (testCoordinator)
+import DiffCorpus (diffCorpusTests)
 import Encoding (testEncoding)
 import Example (testExample)
 import NonceSafety (testNonceSafety)
@@ -24,4 +25,5 @@ propertyTests = testGroup "Property Tests" [testEncoding, testScalars, testProto
 main :: IO ()
 main = do
   officialVectors <- officialVectorTests
-  defaultMain (testGroup "All Tests" [officialVectors, unitTests, propertyTests])
+  diffCorpus <- diffCorpusTests
+  defaultMain (testGroup "All Tests" [officialVectors, diffCorpus, unitTests, propertyTests])

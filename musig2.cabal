@@ -15,8 +15,11 @@ extra-doc-files:
   README.md
 
 extra-source-files:
+  scripts/gen-diff-corpus.py
   test/vectors/bip327/*.json
   test/vectors/bip327/README.md
+  test/vectors/diff/corpus.json
+  test/vectors/diff/README.md
 
 description:
   Pure BIP0327 MuSig2 (partial)signatures with tweak support on the elliptic curve secp256k1.
@@ -106,6 +109,7 @@ test-suite musig2-tests
     ApplyTweaks
     Bip327Regressions
     CoordinatorRounds
+    DiffCorpus
     Encoding
     Example
     Generators

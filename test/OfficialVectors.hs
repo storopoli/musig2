@@ -18,7 +18,7 @@ messages, so an updated vector file cannot be silently half-run.
 -}
 module OfficialVectors (officialVectorTests) where
 
-import Control.Monad (filterM, foldM, unless, void, zipWithM, (>=>))
+import Control.Monad (filterM, foldM, void, zipWithM, (>=>))
 import Crypto.Curve.Secp256k1.MuSig2
 import Crypto.Curve.Secp256k1.MuSig2.Coordinator (
   Blame (..),
@@ -38,7 +38,6 @@ import Crypto.Curve.Secp256k1.MuSig2.Unsafe (nonceGenWithRand, secNonceFromBytes
 import qualified Crypto.Hash.SHA256 as SHA256
 import Data.Aeson (FromJSON (..), Value, eitherDecodeFileStrict, withObject, (.:), (.:?))
 import qualified Data.Aeson.Key as Key
-import qualified Data.Aeson.KeyMap as KeyMap
 import Data.Aeson.Types (Object, Parser, parseEither)
 import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
@@ -54,7 +53,7 @@ import System.Environment (lookupEnv)
 import System.FilePath ((</>))
 import Test.Tasty
 import Test.Tasty.HUnit
-import Util (hexOf, secKeyFromInt)
+import Util (Hex (..), hexOf, secKeyFromInt, strictObject)
 
 -- Locating and loading the vector files ---------------------------------------
 
@@ -160,21 +159,6 @@ loadVectors dir = do
       Right v -> either (\err -> Left (path <> ": " <> err)) Right (parseEither p v)
 
 -- JSON parsing ---------------------------------------------------------------
-
--- | Hex-encoded bytes.
-newtype Hex = Hex {unHex :: ByteString}
-
-instance FromJSON Hex where
-  parseJSON v = do
-    s <- parseJSON v
-    either (fail . (("invalid hex " <> show s <> ": ") <>)) (pure . Hex) (B16.decode (BC.pack s))
-
--- | Like 'withObject', but fails on fields outside the allowed list.
-strictObject :: String -> [Key.Key] -> (Object -> Parser a) -> Value -> Parser a
-strictObject what allowed k = withObject what $ \o -> do
-  let unknown = filter (`notElem` allowed) (KeyMap.keys o)
-  unless (null unknown) $ fail (what <> ": unexpected fields " <> show (map Key.toString unknown))
-  k o
 
 hexField :: Object -> Key.Key -> Parser ByteString
 hexField o k = unHex <$> o .: k
