@@ -16,10 +16,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ['9.8', '9.10', '9.12', '9.14']
-        # ubuntu-24.04: llvm-15 is not packaged for ubuntu-latest (26.04)
-        os: [ubuntu-24.04, macos-latest]
+        ghc: ['9.10', '9.12', '9.14']
+        os: [ubuntu-latest, macos-latest]
         llvm: [false, true]
+        # Newest LLVM each GHC supports (its configure.ac LlvmMinVersion and
+        # LlvmMaxVersion: 9.10 13-15, 9.12 13-19, 9.14 13-20) that the runner
+        # can install.
+        include:
+          - ghc: '9.10'
+            llvm-version: '15'
+          - ghc: '9.12'
+            llvm-version: '19'
+          - ghc: '9.14'
+            llvm-version: '20'
+        exclude:
+          # ubuntu-latest (26.04) only packages LLVM >= 17, which GHC 9.10 does
+          # not support. Its LLVM backend is still covered on macOS and by the
+          # Nix workflow.
+          - ghc: '9.10'
+            os: ubuntu-latest
+            llvm: true
     permissions:
       contents: read
       actions: read
@@ -31,16 +47,20 @@ jobs:
 
       - name: Install LLVM (Linux)
         if: matrix.llvm && runner.os == 'Linux'
+        env:
+          LLVM_VERSION: ${{ matrix.llvm-version }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-15
-          echo "/usr/lib/llvm-15/bin" >> $GITHUB_PATH
+          sudo apt-get install -y "llvm-${LLVM_VERSION}"
+          echo "/usr/lib/llvm-${LLVM_VERSION}/bin" >> "$GITHUB_PATH"
 
       - name: Install LLVM (macOS)
         if: matrix.llvm && runner.os == 'macOS'
+        env:
+          LLVM_VERSION: ${{ matrix.llvm-version }}
         run: |
-          brew install llvm@15
-          echo "$(brew --prefix llvm@15)/bin" >> $GITHUB_PATH
+          brew install "llvm@${LLVM_VERSION}"
+          echo "$(brew --prefix "llvm@${LLVM_VERSION}")/bin" >> "$GITHUB_PATH"
 
       - name: Setup Haskell
         uses: haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d # v2.12.1
@@ -101,6 +121,7 @@ jobs:
         uses: haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d # v2.12.1
         id: setup-cabal-fmt
         with:
+          # cabal-fmt does not build with GHC >= 9.10 yet (base < 4.20)
           ghc-version: '9.8'
           cabal-version: 'latest'
 

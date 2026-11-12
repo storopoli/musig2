@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+* Drop support for GHC 9.8 (`base >= 4.20`); tested with GHC 9.10.3, 9.12.4
+  and 9.14.1
+
 ## 0.2.1 (2026-11-12)
 
 * BIP-0327 conformance fixes:

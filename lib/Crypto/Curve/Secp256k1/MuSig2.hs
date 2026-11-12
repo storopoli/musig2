@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -135,11 +134,6 @@ import Data.Binary.Put (
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
-
-{- HLINT ignore "Use fewer imports" -}
-#if !MIN_VERSION_base(4,20,0)
-import Data.Foldable (foldl')
-#endif
 import Data.Foldable (toList, traverse_)
 import Data.Maybe (fromMaybe)
 import Data.Sequence (Seq)

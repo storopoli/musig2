@@ -9,7 +9,7 @@ maintainer:         jose@storopoli.com
 homepage:           https://github.com/storopoli/musig2
 category:           Cryptography
 build-type:         Simple
-tested-with:        GHC ==9.8.4 || ==9.10.3 || ==9.12.4 || ==9.14.1
+tested-with:        GHC ==9.10.3 || ==9.12.4 || ==9.14.1
 extra-doc-files:    CHANGELOG
 extra-source-files:
   test/vectors/bip327/*.json
@@ -38,7 +38,7 @@ library
   exposed-modules:  Crypto.Curve.Secp256k1.MuSig2
   other-modules:    Crypto.Curve.Secp256k1.MuSig2.Internal
   build-depends:
-    , base            >=4.19   && <5
+    , base            >=4.20   && <5
     , binary          >=0.8    && <0.9
     , bytestring      >=0.9    && <0.13
     , containers      >=0.6    && <0.9
@@ -74,7 +74,7 @@ test-suite musig2-tests
 
   build-depends:
     , aeson              >=2.0  && <2.4
-    , base               >=4.19 && <5
+    , base               >=4.20 && <5
     , base16-bytestring
     , binary
     , bytestring
@@ -99,7 +99,7 @@ benchmark musig2-bench
     ghc-options: -fllvm
 
   build-depends:
-    , base               >=4.19 && <5
+    , base               >=4.20 && <5
     , base16-bytestring
     , bytestring
     , criterion
