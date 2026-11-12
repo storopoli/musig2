@@ -51,6 +51,7 @@ common implementation
     , containers      >=0.6     && <0.9
     , deepseq         >=1.4     && <1.7
     , entropy         >=0.4.1.6 && <0.5
+    , ppad-fixed      >=0.2.2   && <0.3
     , ppad-secp256k1  >=0.5.10  && <0.6
     , ppad-sha256     >=0.3.5   && <0.4
 

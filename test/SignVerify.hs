@@ -7,16 +7,15 @@ The BIP-327 @sign_verify_vectors.json@ cases run in "OfficialVectors".
 module SignVerify (testSignVerify) where
 
 import Crypto.Curve.Secp256k1.MuSig2
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (pubNonceFromScalars, secNonceFromScalars)
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (curveOrder)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (curveOrder, integerToBytes32)
+import Crypto.Curve.Secp256k1.MuSig2.Unsafe (secNonceFromBytes)
 import qualified Data.ByteString as BS
 import Data.ByteString.Internal (ByteString (BS))
 import Data.List.NonEmpty (NonEmpty (..))
-import Data.Maybe (fromMaybe)
 import Foreign.ForeignPtr (mallocForeignPtrBytes)
 import Test.Tasty
 import Test.Tasty.HUnit
-import Util (failsWith, secKeyFromInt, secNonceFromInts, unsafeRight)
+import Util (failsWith, pubNonceFromInts, secKeyFromInt, secNonceFromInts, unsafeRight)
 
 testSignVerify :: TestTree
 testSignVerify =
@@ -24,7 +23,7 @@ testSignVerify =
     "input validation"
     [ testCase "secret nonce scalars must be in [1, n)" $ do
         let pk = secKeyPubKey (secKeyFromInt 1)
-            err k1 k2 = either Just (const Nothing) <$> secNonceFromScalars k1 k2 pk
+            err k1 k2 = either Just (const Nothing) <$> secNonceFromBytes (integerToBytes32 k1 <> integerToBytes32 k2 <> encode pk)
         err 0 1 >>= (@?= Just ScalarZero)
         err 1 0 >>= (@?= Just ScalarZero)
         err curveOrder 1 >>= (@?= Just ScalarOutOfRange)
@@ -59,4 +58,4 @@ testSignVerify =
  where
   failure :: Either e a -> Maybe e
   failure = either Just (const Nothing)
-  pn k1 k2 = fromMaybe (error "zero nonce") (pubNonceFromScalars k1 k2)
+  pn = pubNonceFromInts

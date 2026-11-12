@@ -9,18 +9,18 @@ import Control.Concurrent (forkIO, getNumCapabilities)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, readMVar, takeMVar)
 import Control.Monad (forM_, replicateM, void)
 import Crypto.Curve.Secp256k1.MuSig2
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (peekSecNonce, pubNonceFromScalars, secNonceIsUsed, secNoncePubNonce)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (peekSecNonce, secNonceIsUsed, secNoncePubNonce)
 import Crypto.Curve.Secp256k1.MuSig2.Unsafe
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Either (lefts, rights)
 import Data.IORef (newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty (..))
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (isJust)
 import Data.Word (Word64)
 import Test.Tasty
 import Test.Tasty.HUnit
-import Util (failsWith, secKeyFromInt, unsafeRight)
+import Util (failsWith, pubNonceFromInts, secKeyFromInt, unsafeRight)
 
 testNonceSafety :: TestTree
 testNonceSafety =
@@ -85,7 +85,7 @@ nonceFor sk inputs n = unsafeRight <$> nonceGenCounter sk n inputs
 
 -- | Another signer's public nonce (any valid points will do).
 pubNonceFor :: Integer -> PubNonce
-pubNonceFor n = fromMaybe (error "zero nonce") (pubNonceFromScalars (1000 + n) (2000 + n))
+pubNonceFor n = pubNonceFromInts (1000 + n) (2000 + n)
 
 -- | A session for signers 1 and 2 with the given nonces.
 sessionWith :: KeyAggContext -> ByteString -> PubNonce -> PubNonce -> Session

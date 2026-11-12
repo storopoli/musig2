@@ -31,7 +31,6 @@ module Crypto.Curve.Secp256k1.MuSig2.Internal.Types (
   -- * Secret keys
   SecKey (..),
   secKeyFromBytes,
-  secKeyFromInteger,
   secKeyToBytes,
   secKeyPubKey,
 
@@ -60,7 +59,7 @@ import Control.DeepSeq (NFData (..))
 import Crypto.Curve.Secp256k1 (Projective, neg, parse_point, _CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Error (DecodeError (..))
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Point (cbytes, cbytesExt, hasEvenYBytes, infinityBytes, isInfinity, isValidPoint, mulGSecret)
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (bytesToInteger, curveOrder, fieldSize, integerToBytes32)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (SecScalar, bytesToInteger, curveOrder, fieldSize, integerToBytes32, secScalarFromBytes, secScalarToBytes)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Word (Word8)
@@ -214,10 +213,13 @@ pubKeyXOnly pk =
 
 {- | A secret key \(0 < d < n\), with its public key.
 
+The scalar is a t'SecScalar': it is parsed, encoded and computed with in
+constant time, and never held in an 'Integer'.
+
 Deliberately has no 'Show', 'Eq', 'Ord', 'Read', 'Num' or 'Encode' instance.
 -}
 data SecKey = SecKey
-  { secKeyScalar :: !Integer
+  { secKeyScalar :: !SecScalar
   -- ^ \(d\).
   , secKeyPub :: !PubKey
   -- ^ \(d \cdot G\).
@@ -230,22 +232,19 @@ secKeyPubKey = secKeyPub
 instance NFData SecKey where
   rnf (SecKey d p) = rnf d `seq` rnf p
 
--- | A secret key from 32 big-endian bytes.
+{- | A secret key from 32 big-endian bytes in \([1, n)\), checked in
+constant time (see 'secScalarFromBytes').
+-}
 secKeyFromBytes :: ByteString -> Either DecodeError SecKey
-secKeyFromBytes b = expectLength 32 b >> secKeyFromInteger (bytesToInteger b)
+secKeyFromBytes b = do
+  d <- secScalarFromBytes b
+  case mulGSecret d of
+    Nothing -> Left ScalarZero
+    Just p -> Right (SecKey d (mkPubKey p))
 
--- | A secret key from a scalar.
-secKeyFromInteger :: Integer -> Either DecodeError SecKey
-secKeyFromInteger d
-  | d == 0 = Left ScalarZero
-  | d < 0 || d >= curveOrder = Left ScalarOutOfRange
-  | otherwise = case mulGSecret d of
-      Nothing -> Left ScalarOutOfRange
-      Just p -> Right (SecKey d (mkPubKey p))
-
--- | The 32-byte big-endian encoding of a secret key.
+-- | The 32-byte big-endian encoding of a secret key, in constant time.
 secKeyToBytes :: SecKey -> ByteString
-secKeyToBytes = integerToBytes32 . secKeyScalar
+secKeyToBytes = secScalarToBytes . secKeyScalar
 
 -- Tweaks -------------------------------------------------------------------------
 

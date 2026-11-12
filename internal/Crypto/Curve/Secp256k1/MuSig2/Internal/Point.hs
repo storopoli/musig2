@@ -29,7 +29,7 @@ module Crypto.Curve.Secp256k1.MuSig2.Internal.Point (
 ) where
 
 import Crypto.Curve.Secp256k1 (Context, Projective, add, mul_vartime, mul_wnaf, precompute, serialize_point, valid, _CURVE_ZERO)
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (curveOrder, modQ)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (SecScalar, modQ, secScalarWider)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as BU
@@ -87,14 +87,13 @@ mulGPublic k = case modQ k of
   -- mul_wnaf only fails for scalars 0 or >= n, which are ruled out.
   k' -> fromMaybe _CURVE_ZERO (mul_wnaf gContext (fromInteger k'))
 
-{- | Constant-time multiplication of the generator by a /secret/ scalar in
-\([1, n)\) (ppad's timing-safe wNAF over precomputed multiples); 'Nothing'
-outside that range.
+{- | Constant-time multiplication of the generator by a /secret/ scalar
+(ppad's timing-safe wNAF over precomputed multiples); 'Nothing' for zero.
+The scalar goes to ppad as a 'Data.Word.Wider.Wider' word, never through
+'Integer'.
 -}
-mulGSecret :: Integer -> Maybe Projective
-mulGSecret k
-  | k <= 0 || k >= curveOrder = Nothing
-  | otherwise = mul_wnaf gContext (fromInteger k)
+mulGSecret :: SecScalar -> Maybe Projective
+mulGSecret k = mul_wnaf gContext (secScalarWider k)
 
 -- | Strict sum of points.
 sumPoints :: (Foldable f) => f Projective -> Projective
