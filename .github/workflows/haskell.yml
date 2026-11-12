@@ -16,8 +16,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ['9.8', '9.10', '9.12']
-        os: [ubuntu-latest, macos-latest]
+        ghc: ['9.8', '9.10', '9.12', '9.14']
+        # ubuntu-24.04: llvm-15 is not packaged for ubuntu-latest (26.04)
+        os: [ubuntu-24.04, macos-latest]
         llvm: [false, true]
     permissions:
       contents: read
@@ -56,10 +57,10 @@ jobs:
           restore-keys: ${{ runner.os }}-ghc-${{ matrix.ghc }}-
 
       - name: Install dependencies
-        run: cabal build --dependencies-only all
+        run: cabal build --dependencies-only --enable-tests --enable-benchmarks all
 
       - name: Build
-        run: cabal build all ${{ matrix.llvm && '-fllvm' || '' }}
+        run: cabal build all --enable-tests --enable-benchmarks ${{ matrix.llvm && '-fllvm' || '' }}
 
       - name: Test
         run: cabal test ${{ matrix.llvm && '-fllvm' || '' }}
