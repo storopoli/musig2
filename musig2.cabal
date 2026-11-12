@@ -109,6 +109,7 @@ test-suite musig2-tests
     NonceSafety
     OfficialVectors
     Properties
+    Scalars
     SignVerify
     Util
 
@@ -121,6 +122,7 @@ test-suite musig2-tests
     , directory
     , filepath
     , musig2:internal
+    , ppad-fixed
     , ppad-secp256k1
     , ppad-sha256
     , QuickCheck
