@@ -89,7 +89,7 @@ mulGPublic k = case modQ k of
 
 {- | Constant-time multiplication of the generator by a /secret/ scalar
 (ppad's timing-safe wNAF over precomputed multiples); 'Nothing' for zero.
-The scalar goes to ppad as a 'Data.Word.Wider.Wider' word, never through
+The scalar goes to ppad as a t'Data.Word.Wider.Wider' word, never through
 'Integer'.
 -}
 mulGSecret :: SecScalar -> Maybe Projective

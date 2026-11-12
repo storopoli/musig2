@@ -55,20 +55,31 @@ is valid by construction.
   wrong one is attributed to its signer instead of producing an invalid
   signature. 'sign' checks its own result.
 
-* __Non-constant-time arithmetic.__ Elliptic curve multiplications involving
-  secrets are constant-time (they are done by @ppad-secp256k1@), but the
-  scalar arithmetic on secret keys and nonces (e.g. \(k_1 + b k_2\) and
-  \(k + e a d\) in 'sign', and the reductions in nonce generation) uses
-  Haskell's arbitrary-precision 'Integer', whose running time depends on the
-  values. An attacker able to measure timings or caches on the same machine
-  may learn information about secrets.
+* __Constant-time arithmetic on secrets.__ Secret keys and nonces are never
+  held in an 'Integer'. They are parsed, range-checked, reduced from hashes,
+  combined (\(k_1 + b k_2\) and \(k + e a d\) in 'sign'), negated and
+  encoded with the fixed-width, constant-time Montgomery arithmetic of
+  @ppad-fixed@, and multiplied with the generator by @ppad-secp256k1@'s
+  timing-safe wNAF. Caveats:
+
+    * Public values (key aggregation coefficients, nonce coefficients,
+      challenges, tweaks, partial signatures, public keys and nonces) use
+      variable-time 'Integer' arithmetic and curve operations, by design.
+
+    * Constant time is a property of the machine code, which GHC does not
+      guarantee. The Haskell code has no branch or memory access that
+      depends on a secret (checked in GHC Core); with the @llvm@ flag on
+      x86_64, LLVM's conversion of conditional moves into branches is
+      disabled, as in @ppad-fixed@ and @ppad-secp256k1@. Other code
+      generators and architectures are not audited.
 
 * __Zeroization is best-effort.__ The scalars of a t'SecNonce' live in a
   pinned buffer (which the garbage collector never copies) that 'sign'
   zero-fills when it consumes the nonce. Everything else is an ordinary
   Haskell value that is not wiped and may be copied by the garbage collector:
   secret keys, the intermediate values computed from the nonce while
-  signing, and the buffer of a nonce that is dropped without being used.
+  signing (fixed-width words, but still heap values), and the buffer of a
+  nonce that is dropped without being used.
 
 * __Randomness.__ 'nonceGen' reads 32 bytes from the operating system's
   random number generator (@getrandom@ on Linux, via the @entropy@ package).

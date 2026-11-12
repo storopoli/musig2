@@ -213,8 +213,8 @@ pubKeyXOnly pk =
 
 {- | A secret key \(0 < d < n\), with its public key.
 
-The scalar is a t'SecScalar': it is parsed, encoded and computed with in
-constant time, and never held in an 'Integer'.
+The scalar is held as four 64-bit words in Montgomery form, never in an
+'Integer': it is parsed, encoded and computed with in constant time.
 
 Deliberately has no 'Show', 'Eq', 'Ord', 'Read', 'Num' or 'Encode' instance.
 -}
@@ -232,8 +232,9 @@ secKeyPubKey = secKeyPub
 instance NFData SecKey where
   rnf (SecKey d p) = rnf d `seq` rnf p
 
-{- | A secret key from 32 big-endian bytes in \([1, n)\), checked in
-constant time (see 'secScalarFromBytes').
+{- | A secret key from 32 big-endian bytes in \([1, n)\). The range check
+runs in constant time; only its outcome (valid, 'ScalarZero' or
+'ScalarOutOfRange') is revealed.
 -}
 secKeyFromBytes :: ByteString -> Either DecodeError SecKey
 secKeyFromBytes b = do

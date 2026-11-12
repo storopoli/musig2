@@ -151,7 +151,7 @@ secScalarFromBytesModQ b = SecScalar (S.to (widerFromBytes b))
 secScalarToBytes :: SecScalar -> ByteString
 secScalarToBytes = widerToBytes . secScalarWider
 
--- | A secret scalar as a plain 'Wider' word in \([0, n)\), e.g. for @ppad-secp256k1@'s @mul_wnaf@.
+-- | A secret scalar as a plain t'Wider' word in \([0, n)\), e.g. for @ppad-secp256k1@'s @mul_wnaf@.
 secScalarWider :: SecScalar -> Wider
 secScalarWider (SecScalar m) = S.retr m
 
@@ -207,7 +207,7 @@ signScalar (SecScalar k1) (SecScalar k2) (SecScalar d) negateNonce negateKey b e
 
 -- Constant-time byte conversions ---------------------------------------------
 
-{- | The first 32 bytes, big-endian, as a 'Wider' word: shifts and ors with
+{- | The first 32 bytes, big-endian, as a t'Wider' word: shifts and ors with
 no branch on the data.
 
 These conversions are vendored instead of @ppad-secp256k1@'s
@@ -233,7 +233,7 @@ widerFromBytes b
   byteAt :: Int -> Int -> Word
   byteAt i s = fromIntegral (BU.unsafeIndex b i) `unsafeShiftL` s
 
--- | A 'Wider' word as 32 big-endian bytes, with no branch on the data.
+-- | A t'Wider' word as 32 big-endian bytes, with no branch on the data.
 widerToBytes :: Wider -> ByteString
 widerToBytes (Wider (# Limb w0, Limb w1, Limb w2, Limb w3 #)) = BI.unsafeCreate 32 $ \p -> do
   pokeLimb p 0 (W# w3)
