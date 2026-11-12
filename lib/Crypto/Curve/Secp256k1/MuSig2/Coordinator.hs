@@ -366,8 +366,12 @@ data SigRoundError
   = -- | Partial signatures are missing: blames each of those signers with 'MissingContribution'.
     SigRoundBlame !(NonEmpty Blame)
   | {- | Every partial signature verified, but their aggregate is not a valid
-    BIP-340 signature. This cannot happen unless the coordinator itself is
-    faulty (a bug or, e.g., a bit flip): nobody is to blame.
+    BIP-340 signature. This happens if the final nonce is the point at
+    infinity, for which BIP-327 substitutes the generator: the signers'
+    nonces cancel out, which takes every signer colluding (an honest signer's
+    nonce is unpredictable) or negligible luck. Otherwise the coordinator
+    itself is faulty (a bug or, e.g., a bit flip). No single signer can be
+    blamed.
     -}
     FinalSignatureInvalid
   deriving (Eq, Show)
