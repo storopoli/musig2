@@ -8,23 +8,23 @@
 
     # Keep the ppad stack pinned until nixpkgs carries the current releases.
     ppad-secp256k1-src = {
-      url = "https://hackage.haskell.org/package/ppad-secp256k1-0.5.4/ppad-secp256k1-0.5.4.tar.gz";
+      url = "https://hackage.haskell.org/package/ppad-secp256k1-0.5.10/ppad-secp256k1-0.5.10.tar.gz";
       flake = false;
     };
     ppad-fixed-src = {
-      url = "https://hackage.haskell.org/package/ppad-fixed-0.1.3/ppad-fixed-0.1.3.tar.gz";
+      url = "https://hackage.haskell.org/package/ppad-fixed-0.2.2/ppad-fixed-0.2.2.tar.gz";
       flake = false;
     };
     ppad-base16-src = {
-      url = "https://hackage.haskell.org/package/ppad-base16-0.2.1/ppad-base16-0.2.1.tar.gz";
+      url = "https://hackage.haskell.org/package/ppad-base16-0.3.1/ppad-base16-0.3.1.tar.gz";
       flake = false;
     };
     ppad-sha256-src = {
-      url = "https://hackage.haskell.org/package/ppad-sha256-0.3.2/ppad-sha256-0.3.2.tar.gz";
+      url = "https://hackage.haskell.org/package/ppad-sha256-0.3.6/ppad-sha256-0.3.6.tar.gz";
       flake = false;
     };
     ppad-sha512-src = {
-      url = "https://hackage.haskell.org/package/ppad-sha512-0.2.2/ppad-sha512-0.2.2.tar.gz";
+      url = "https://hackage.haskell.org/package/ppad-sha512-0.2.6/ppad-sha512-0.2.6.tar.gz";
       flake = false;
     };
     ppad-hmac-drbg-src = {

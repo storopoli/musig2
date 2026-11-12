@@ -56,6 +56,9 @@ instance NFData SecNonceGenParams where
   rnf (SecNonceGenParams pk sk apk mg ei) =
     rnf pk `seq` rnf sk `seq` rnf apk `seq` rnf mg `seq` rnf ei
 
+instance NFData M.MuSig2Error where
+  rnf = rwhnf
+
 -- | Main benchmark function.
 main :: IO ()
 main =

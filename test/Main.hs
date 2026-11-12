@@ -1,34 +1,30 @@
 module Main where
 
-import AggNonces (testAggNonces)
-import AggPartials (testAggPartials)
 import AggPartialsProperty (propertyAggPartials)
-import AggPubkeys (testAggPubkeys)
 import ApplyTweaks (testApplyTweaks)
+import Bip327Regressions (testBip327Regressions)
 import MonoidProjective (propertyMonoidProjective)
 import MonoidPubNonce (propertyMonoidPubNonce)
-import NonceGen (testNonceGen)
 import NonceGenProperty (propertyNonceGen)
+import OfficialVectors (officialVectorTests)
 import ParityPub (testParityPub)
 import SignVerify (testSignVerify)
 import SignVerifyProperty (propertySignVerify)
 import SignVerifyTweakProperty (propertySignVerifyTweak)
-import SortPubkeys (testSortPubkeys)
 import Test.Tasty
-import Tweak (testTweak)
 
 -- | Unit tests.
 unitTests :: TestTree
-unitTests = testGroup "Unit Tests" [testSortPubkeys, testAggPubkeys, testParityPub, testApplyTweaks, testNonceGen, testAggNonces, testAggPartials, testSignVerify, testTweak]
+unitTests = testGroup "Unit Tests" [testParityPub, testApplyTweaks, testSignVerify, testBip327Regressions]
 
 -- | Property tests.
 propertyTests :: TestTree
 propertyTests = testGroup "Property Tests" [propertyMonoidProjective, propertyNonceGen, propertyMonoidPubNonce, propertySignVerify, propertySignVerifyTweak, propertyAggPartials]
 
 -- | Tests.
-tests :: TestTree
-tests = testGroup "All Tests" [unitTests, propertyTests]
+tests :: TestTree -> TestTree
+tests officialVectors = testGroup "All Tests" [officialVectors, unitTests, propertyTests]
 
 -- | Run all tests.
 main :: IO ()
-main = defaultMain tests
+main = officialVectorTests >>= defaultMain . tests

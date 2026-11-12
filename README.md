@@ -44,8 +44,8 @@ A sample GHCi session:
 > let params2 = MuSig2.defaultSecNonceGenParams pub2
 > Right secnonce1 <- MuSig2.secNonceGen params1
 > Right secnonce2 <- MuSig2.secNonceGen params2
-> let pubnonce1 = MuSig2.publicNonce secnonce1
-> let pubnonce2 = MuSig2.publicNonce secnonce2
+> let Right pubnonce1 = MuSig2.publicNonce secnonce1
+> let Right pubnonce2 = MuSig2.publicNonce secnonce2
 > let pubnonces = [pubnonce1, pubnonce2]
 >
 > -- aggregate nonces and create session context
@@ -71,8 +71,11 @@ Haddocks (API documentation, etc.) are hosted at [hackage][hackage].
 
 ## Security
 
-`musig2` passes all test vectors specified in the [BIP-0327][bip327],
-while also checking for key properties using [`QuickCheck`][quickcheck].
+The test suite runs the official [BIP-0327][bip327] test vectors, loaded
+from the upstream JSON files, and checks key properties using
+[`QuickCheck`][quickcheck]. Vectors that need a byte-level API with signer
+blame (invalid encodings) or `DeterministicSign` are not supported yet; the
+test suite lists them explicitly.
 All elliptic curve and modular arithmetic operations are deferred to
 the [`ppad-secp256k1`][ppad-secp256k1] package.
 
