@@ -75,6 +75,7 @@ format-hs:
     #!/usr/bin/env bash
     if command -v fourmolu &> /dev/null; then
         fourmolu -i lib
+        fourmolu -i internal
         fourmolu -i test
         fourmolu -i bench
     else

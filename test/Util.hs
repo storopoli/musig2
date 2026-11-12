@@ -1,220 +1,64 @@
-{-# LANGUAGE InstanceSigs #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
+-- | Helpers shared by the test modules.
+module Util (
+  decodeHex,
+  hexOf,
+  unsafeRight,
+  unsafeDecode,
+  secKeyFromInt,
+  tweakFromInt,
+  psigFromInt,
+  secNonceFromInts,
+  decodeEach,
+  isOnCurveX,
+) where
 
-module Util (parsePoint, parseScalar, parsePubNonce, extractXOnly, decodeHex, Rand32 (..), Scalar (..), SignerMaterial (..), unsafeRight, unsafeMkSecNonce) where
-
-import Crypto.Curve.Secp256k1 (Projective, Pub, derive_pub, mul, parse_point, serialize_point, _CURVE_G, _CURVE_ZERO)
-import Crypto.Curve.Secp256k1.MuSig2 (PubNonce (..), SecKey (..), SecNonce, SecNonceGenParams (..), Tweak (..), mkSecNonce)
-import Crypto.Curve.Secp256k1.MuSig2.Internal (curveOrder, secNonceScalars)
+import Crypto.Curve.Secp256k1.MuSig2 (DecodeError, Encode (..), PartialSignature, PubKey, SecKey, SecNonce, Tweak)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (secNonceFromScalars)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (fieldSize, integerToBytes32)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Types (secKeyFromInteger)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
-import Data.Maybe (fromJust, fromMaybe)
-import Test.Tasty.QuickCheck (Arbitrary (..), Gen, choose, frequency, vectorOf)
+import qualified Data.ByteString.Char8 as BC
+import Data.Char (toUpper)
 
-{- | Parses a 'ByteString' into a 'Pub'key.
-
-This is a test YOLO function that blows up on your face if you don't
-supply proper string representations.
--}
-parsePoint :: ByteString -> Pub
-parsePoint s = case B16.decode s of
-  Left p -> error $ "cannot decode point" <> show p
-  Right p -> (fromJust . parse_point) p
-
--- | Parses a hex 'ByteString' into an 'Integer' scalar.
-parseScalar :: ByteString -> Integer
-parseScalar = BS.foldl' (\acc b -> acc * 256 + fromIntegral b) 0 . decodeHex
-
--- | Extracts X-coordinate from compressed point serialization.
-extractXOnly :: Pub -> ByteString
-extractXOnly = BS.drop 1 . serialize_point
-
--- | Decodes hex string to 'ByteString'.
+-- | Decodes hex; fails the test on invalid input.
 decodeHex :: ByteString -> ByteString
-decodeHex h = case B16.decode h of
-  Right bs -> bs
-  Left _ -> error "Invalid hex string in test vector"
+decodeHex h = either (error . ("invalid hex in test: " <>)) id (B16.decode h)
 
-{- | 'Arbitrary' instance for 'Projective'.
-
-Generate points as scalar multiples of the generator,
-including the identity with low probability (1%).
--}
-instance Arbitrary Projective where
-  arbitrary :: Gen Projective
-  arbitrary =
-    frequency
-      [ (1, return _CURVE_ZERO) -- Include identity occasionally
-      ,
-        ( 99
-        , do
-            scalar <- choose (0, curveOrder)
-            return (fromMaybe (error "Failed to multiply scalar by generator") $ mul _CURVE_G (fromInteger scalar))
-        )
-      ]
-
--- | Custom 'Gen' for 'ByteString' that generates maximum length of 1,024.
-arbitraryBS :: Gen ByteString
-arbitraryBS = do
-  len <- choose (0, 1024) :: Gen Int -- Limit size to avoid excessive memory use
-  BS.pack <$> vectorOf len arbitrary
-
-genNonZeroPub :: Gen Pub
-genNonZeroPub = do
-  scalar <- choose (1, curveOrder - 1)
-  pure $ fromMaybe (error "Failed to derive non-zero public key") $ derive_pub (fromInteger scalar)
-
--- | 'Arbitrary' instance for 'ByteString'.
-instance Arbitrary ByteString where
-  arbitrary = arbitraryBS
-
--- | Scalar type for testing secret keys.
-newtype Scalar = Scalar Integer deriving (Show, Eq)
-
--- | 'Arbitrary' instance for 'Scalar' to be within curve order.
-instance Arbitrary Scalar where
-  arbitrary = Scalar <$> choose (1, curveOrder - 1)
-
--- | 32-byte 'ByteString' for testing hashes.
-newtype Rand32 = Rand32 ByteString deriving (Show, Eq)
-
--- | 'Arbitrary' instance for 'Rand32'.
-instance Arbitrary Rand32 where
-  arbitrary = Rand32 . BS.pack <$> vectorOf 32 arbitrary
+-- | Upper-case hex, as in the BIP-327 vector files.
+hexOf :: ByteString -> String
+hexOf = map toUpper . BC.unpack . B16.encode
 
 unsafeRight :: (Show e) => Either e a -> a
 unsafeRight = either (error . show) id
 
-unsafeMkSecNonce :: Pub -> Integer -> Integer -> SecNonce
-unsafeMkSecNonce pub k1 k2 = unsafeRight (mkSecNonce pub k1 k2)
+-- | Decodes a hex encoding; fails the test on invalid input.
+unsafeDecode :: (Encode a) => ByteString -> a
+unsafeDecode = unsafeRight . decode . decodeHex
 
-data SignerMaterial = SignerMaterial
-  { signerSecKey :: SecKey
-  , signerPubKey :: Pub
-  , signerSecNonce :: SecNonce
-  }
+secKeyFromInt :: Integer -> SecKey
+secKeyFromInt = unsafeRight . secKeyFromInteger
 
-{- | 'Arbitrary' instance for 'SecNonceGenParams'.
+tweakFromInt :: Integer -> Tweak
+tweakFromInt = unsafeRight . decode . integerToBytes32
 
-Slightly biased towards 'Just' than 'Nothing'.
+psigFromInt :: Integer -> PartialSignature
+psigFromInt = unsafeRight . decode . integerToBytes32
+
+secNonceFromInts :: Integer -> Integer -> PubKey -> SecNonce
+secNonceFromInts k1 k2 = unsafeRight . secNonceFromScalars k1 k2
+
+{- | Decodes each byte string in order; the first failure comes with its
+position, as BIP-327 blames the signer who sent it.
 -}
-instance Arbitrary SecNonceGenParams where
-  arbitrary = do
-    _sk <- frequency [(2, return Nothing), (3, genMaybeSecKey)]
-    _pk <- case _sk of
-      Nothing -> genNonZeroPub
-      Just (SecKey sk) -> pure $ fromMaybe (error "Failed to derive pubkey from generated secret key") $ derive_pub (fromInteger sk)
-    _aggpk <- frequency [(2, return Nothing), (3, Just <$> genNonZeroPub)]
-    _msg <- frequency [(2, return Nothing), (3, Just <$> arbitraryBS)]
-    _extraIn <- frequency [(2, return Nothing), (3, Just <$> arbitraryBS)]
-    return SecNonceGenParams{..}
-   where
-    genMaybeSecKey :: Gen (Maybe SecKey)
-    genMaybeSecKey = do
-      (Scalar i) <- arbitrary
-      return $ Just (SecKey i)
+decodeEach :: (Encode a) => [ByteString] -> Either (Int, DecodeError) [a]
+decodeEach = traverse (\(i, b) -> either (Left . (,) i) Right (decode b)) . zip [0 ..]
 
-{- | 'Show' instance for 'SecNonceGenParams'.
-
-Should only used for testing purposes, hence why it is only defined in this test module.
--}
-instance Show SecNonceGenParams where
-  show (SecNonceGenParams _pk _sk _aggpk _msg _extraIn) =
-    let showMaybeBS mb = case mb of
-          Nothing -> "Nothing"
-          Just bs -> "Just (ByteString of length " ++ show (BS.length bs) ++ ")"
-        showSk msk = case msk of
-          Nothing -> "Nothing"
-          Just sk -> "Just " ++ show sk
-     in "SecNonceGenParams {_pk = "
-          ++ show _pk
-          ++ ", _sk = "
-          ++ showSk _sk
-          ++ ", _aggpk = "
-          ++ show _aggpk
-          ++ ", _msg = "
-          ++ showMaybeBS _msg
-          ++ ", _extraIn = "
-          ++ showMaybeBS _extraIn
-          ++ "}"
-
--- | 'Arbitrary' instance for 'PubNonce'.
-instance Arbitrary PubNonce where
-  arbitrary :: Gen PubNonce
-  arbitrary = do
-    r1' <- arbitrary
-    r2' <- arbitrary
-    return $ PubNonce{r1 = r1', r2 = r2'}
-
--- | 'Arbitrary' instace of 'SecNonce'.
-instance Arbitrary SecNonce where
-  arbitrary = do
-    scalar <- choose (1, curveOrder - 1)
-    let pub = fromMaybe (error "Failed to derive pubkey for SecNonce") $ derive_pub (fromInteger scalar)
-    k1 <- choose (1, curveOrder - 1)
-    k2 <- choose (1, curveOrder - 1)
-    pure (unsafeMkSecNonce pub k1 k2)
-
-{- | 'Show' instance for 'SecNonce'.
-
-Should only used for testing purposes, hence why it is only defined in this test module.
--}
-instance Show SecNonce where
-  show secNonce =
-    let (k1, k2) = secNonceScalars secNonce
-     in "SecNonce { k1=" ++ show k1 ++ ", k2=" ++ show k2 ++ "}"
-
--- | 'Arbitrary' instace of 'SecKey'.
-instance Arbitrary SecKey where
-  arbitrary = do
-    sk <- choose (1, curveOrder - 1) -- Ensure non-zero
-    return (SecKey sk)
-
-{- | 'Show' instance for 'SecKey'.
-
-Should only used for testing purposes, hence why it is only defined in this test module.
--}
-instance Show SecKey where
-  show (SecKey int) = "SecKey " ++ show int
-
-instance Arbitrary SignerMaterial where
-  arbitrary = do
-    sk <- choose (1, curveOrder - 1)
-    let secKey = SecKey sk
-        pub = fromMaybe (error "Failed to derive pubkey for signer material") $ derive_pub (fromInteger sk)
-    k1 <- choose (1, curveOrder - 1)
-    k2 <- choose (1, curveOrder - 1)
-    pure
-      SignerMaterial
-        { signerSecKey = secKey
-        , signerPubKey = pub
-        , signerSecNonce = unsafeMkSecNonce pub k1 k2
-        }
-
-instance Show SignerMaterial where
-  show signer =
-    "SignerMaterial { signerSecKey = "
-      ++ show (signerSecKey signer)
-      ++ ", signerSecNonce = "
-      ++ show (signerSecNonce signer)
-      ++ "}"
-
--- | 'Arbitrary' instance for 'Tweak'.
-instance Arbitrary Tweak where
-  arbitrary = do
-    tweakValue <- choose (1, curveOrder - 1) -- Ensure valid tweak value
-    isXOnly <- arbitrary
-    return $ if isXOnly then XOnlyTweak tweakValue else PlainTweak tweakValue
-
-{- | Parses a 'ByteString' into a 'PubNonce'.
-
-Mostly used to parse BIP-0327 test vectors.
--}
-parsePubNonce :: ByteString -> PubNonce
-parsePubNonce bs = PubNonce{r1 = r1', r2 = r2'}
+-- | Whether \(x < p\) is the x-coordinate of a point (Euler's criterion on \(x^3 + 7\)).
+isOnCurveX :: Integer -> Bool
+isOnCurveX x = x < fieldSize && powMod (x * x * x + 7) ((fieldSize - 1) `div` 2) fieldSize /= fieldSize - 1
  where
-  r1' = parsePoint $ BS.take 66 bs
-  r2' = parsePoint $ BS.drop 66 bs
+  powMod b e m = go (b `mod` m) e 1
+   where
+    go _ 0 acc = acc
+    go base k acc = go (base * base `mod` m) (k `div` 2) (if odd k then acc * base `mod` m else acc)
