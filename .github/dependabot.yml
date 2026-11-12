@@ -1,4 +1,4 @@
-# Set update schedule for GitHub Actions
+# Set update schedule for GitHub Actions and Nix flake inputs
 version: 2
 updates:
   - package-ecosystem: "github-actions"
@@ -7,9 +7,17 @@ updates:
       interval: "monthly"
     cooldown:
       default-days: 14
+    groups:
+      github-actions:
+        patterns:
+          - "*"
   - package-ecosystem: "nix"
     directory: "/"
     schedule:
       interval: "monthly"
     cooldown:
       default-days: 14
+    groups:
+      nix:
+        patterns:
+          - "*"
