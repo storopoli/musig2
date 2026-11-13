@@ -1,10 +1,21 @@
 # Changelog
 
+## Unreleased
+
+* Documentation:
+  - The coordinator's signer index is trusted: take it from the authenticated
+    connection, never from the message. A participant that chooses the index
+    can get an honest signer blamed (it cannot get an invalid signature
+    accepted)
+  - Secret keys have no `Encode` instance but can be exported with
+    `secKeyToBytes`; the README and the 0.3.0 entry below said secrets cannot
+    be encoded
+
 ## 0.3.0 (2026-11-12)
 
 A redesigned, hard-to-misuse API. Every value of an exported type is valid by
-construction, secrets cannot be printed, compared or encoded, public values
-have BIP-0327 byte encodings, and each kind of failure has its own error type.
+construction, secrets cannot be printed or compared and have no `Encode`
+instance, public values have BIP-0327 byte encodings, and each kind of failure has its own error type.
 This release breaks every 0.2 program; the migration table below maps the old
 names to the new ones.
 
