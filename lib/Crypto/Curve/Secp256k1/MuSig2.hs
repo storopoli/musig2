@@ -60,6 +60,13 @@ is valid by construction.
   signature ("Crypto.Curve.Secp256k1.MuSig2.Coordinator" does this). 'sign'
   checks its own result.
 
+* __Bound the size of untrusted messages.__ BIP-327 allows messages of any
+  length, and every function that takes one holds it in memory whole.
+  'nonceGen', 'newSession' and 'deterministicSign' hash long messages and
+  extra inputs without copying them, but 'verify' (BIP-340 verification in
+  @ppad-secp256k1@) copies the message once more. If messages come from
+  untrusted parties, cap their size before passing them in.
+
 * __Constant-time arithmetic on secrets.__ Secret keys and nonces are never
   held in an 'Integer'. They are parsed, range-checked, reduced from hashes,
   combined (\(k_1 + b k_2\) and \(k + e a d\) in 'sign'), negated and

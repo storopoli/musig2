@@ -2,7 +2,16 @@
 
 ## Unreleased
 
+* Performance:
+  - Tagged hashes of 64 KiB or more are hashed chunk by chunk instead of
+    being joined first, so nonce generation, `newSession` and
+    `deterministicSign` no longer copy long messages and extra inputs. With
+    a 128 MiB message, peak memory falls from about 660 MB to 141 MB for
+    nonce generation and from 530 MB to 141 MB for `newSession`. Shorter
+    inputs keep the hardware-accelerated hash
 * Documentation:
+  - Cap the size of messages from untrusted parties: `verify` still copies
+    the message (in `ppad-secp256k1`)
   - The coordinator's signer index is trusted: take it from the authenticated
     connection, never from the message. A participant that chooses the index
     can get an honest signer blamed (it cannot get an invalid signature
@@ -15,9 +24,9 @@
 
 A redesigned, hard-to-misuse API. Every value of an exported type is valid by
 construction, secrets cannot be printed or compared and have no `Encode`
-instance, public values have BIP-0327 byte encodings, and each kind of failure has its own error type.
-This release breaks every 0.2 program; the migration table below maps the old
-names to the new ones.
+instance, public values have BIP-0327 byte encodings, and each kind of
+failure has its own error type. This release breaks every 0.2 program; the
+migration table below maps the old names to the new ones.
 
 * Breaking API changes (old -> new):
   - `SecKey` (a newtype over `Integer` with `Num`, `Read`, `Eq`, `Ord`) ->

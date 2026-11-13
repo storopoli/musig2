@@ -37,7 +37,7 @@ import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (maybeToList)
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 
@@ -89,11 +89,11 @@ keyAgg pks
           }
  where
   encs = map pubKeyBytes (toList pks)
-  l = hashKeyAggList (BS.concat encs)
+  l = hashKeyAggList encs
   pk2 = find (/= NE.head (fmap pubKeyBytes pks)) encs
   coef enc
     | Just enc == pk2 = 1
-    | otherwise = hashToScalar (hashKeyAggCoef (l <> enc))
+    | otherwise = hashToScalar (hashKeyAggCoef [l, enc])
   coefs = map coef encs
   q = sumPoints (zipWith term coefs (toList pks))
   term a pk
@@ -137,7 +137,7 @@ applyTaprootTweak root ctx = case root of
     | t >= curveOrder -> Left TaprootTweakOutOfRange
     | otherwise -> applyXOnlyTweak (Tweak t) ctx
  where
-  t = bytesToInteger (hashTapTweak (xOnlyBytes (aggXOnlyPubKey ctx) <> fromMaybe BS.empty root))
+  t = bytesToInteger (hashTapTweak (xOnlyBytes (aggXOnlyPubKey ctx) : maybeToList root))
 
 -- | The aggregate key \(Q\), including the tweaks applied so far.
 aggPubKey :: KeyAggContext -> PubKey

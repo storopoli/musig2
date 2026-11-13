@@ -94,13 +94,13 @@ newSession ctx aggNonce msg =
     , sesB = b
     , sesRx = BS.drop 1 rBytes
     , sesREven = hasEvenYBytes rBytes
-    , sesE = hashToScalar (hashChallenge (BS.drop 1 rBytes <> qx <> msg))
+    , sesE = hashToScalar (hashChallenge [BS.drop 1 rBytes, qx, msg])
     , sesQEven = pubKeyHasEvenY q
     }
  where
   q = kacQ ctx
   qx = BS.drop 1 (pubKeyBytes q)
-  b = hashToScalar (hashNonceCoef (aggNonceBytes aggNonce <> qx <> msg))
+  b = hashToScalar (hashNonceCoef [aggNonceBytes aggNonce, qx, msg])
   r' = add (aggNonceR1 aggNonce) (mulPublic (aggNonceR2 aggNonce) b)
   r = if isInfinity r' then _CURVE_G else r'
   rBytes = serialize_point r

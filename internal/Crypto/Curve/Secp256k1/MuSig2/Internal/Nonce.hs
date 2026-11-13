@@ -277,26 +277,26 @@ nonceGenScalars rand pk inputs = (k 0, k 1)
  where
   rand' = case nonceSecKey inputs of
     Nothing -> rand
-    Just sk -> BS.packZipWith xor (secScalarToBytes (secKeyScalar sk)) (hashAux rand)
+    Just sk -> BS.packZipWith xor (secScalarToBytes (secKeyScalar sk)) (hashAux [rand])
   pkBytes = pubKeyBytes pk
   aggpk = maybe BS.empty xOnlyBytes (nonceAggPubKey inputs)
   msgPrefixed = case nonceMessage inputs of
-    Nothing -> BS.singleton 0
-    Just m -> BS.singleton 1 <> bigEndian 8 (BS.length m) <> m
+    Nothing -> [BS.singleton 0]
+    Just m -> [BS.singleton 1, bigEndian 8 (BS.length m), m]
   extra = fromMaybe BS.empty (nonceExtraInput inputs)
+  -- Chunks, not one concatenation: the message and the extra input may be
+  -- long, and are hashed twice.
   prefix =
-    BS.concat
-      [ rand'
-      , bigEndian 1 (BS.length pkBytes)
-      , pkBytes
-      , bigEndian 1 (BS.length aggpk)
-      , aggpk
-      , msgPrefixed
-      , bigEndian 4 (BS.length extra)
-      , extra
-      ]
+    [ rand'
+    , bigEndian 1 (BS.length pkBytes)
+    , pkBytes
+    , bigEndian 1 (BS.length aggpk)
+    , aggpk
+    ]
+      ++ msgPrefixed
+      ++ [bigEndian 4 (BS.length extra), extra]
   k :: Word8 -> SecScalar
-  k i = secScalarFromBytesModQ (hashNonce (prefix <> BS.singleton i))
+  k i = secScalarFromBytesModQ (hashNonce (prefix ++ [BS.singleton i]))
 
 {- | The scalars \((k_1, k_2)\) of BIP-327 @DeterministicSign@ (reduced
 modulo \(n\), possibly zero):
@@ -323,10 +323,10 @@ deterministicNonceScalars ::
 deterministicNonceScalars sk aggOther aggpk msg rand = (k 0, k 1)
  where
   skBytes = secScalarToBytes (secKeyScalar sk)
-  sk' = maybe skBytes (BS.packZipWith xor skBytes . hashAux) rand
-  prefix = BS.concat [sk', aggNonceBytes aggOther, xOnlyBytes aggpk, bigEndian 8 (BS.length msg), msg]
+  sk' = maybe skBytes (BS.packZipWith xor skBytes . hashAux . pure) rand
+  prefix = [sk', aggNonceBytes aggOther, xOnlyBytes aggpk, bigEndian 8 (BS.length msg), msg]
   k :: Word8 -> SecScalar
-  k i = secScalarFromBytesModQ (hashDetNonce (prefix <> BS.singleton i))
+  k i = secScalarFromBytesModQ (hashDetNonce (prefix ++ [BS.singleton i]))
 
 -- | @bytes(n, x)@: the \(n\)-byte big-endian encoding of a length or counter.
 bigEndian :: (Integral a, Bits a) => Int -> a -> ByteString
