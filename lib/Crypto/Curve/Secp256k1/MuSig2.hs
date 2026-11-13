@@ -61,10 +61,8 @@ is valid by construction.
   checks its own result.
 
 * __Bound the size of untrusted messages.__ BIP-327 allows messages of any
-  length, and every function that takes one holds it in memory whole.
-  'nonceGen', 'newSession' and 'deterministicSign' hash long messages and
-  extra inputs without copying them, but 'verify' (BIP-340 verification in
-  @ppad-secp256k1@) copies the message once more. If messages come from
+  length. No function copies a long message or extra input to hash it, but
+  each one holds the whole message in memory, so if messages come from
   untrusted parties, cap their size before passing them in.
 
 * __Constant-time arithmetic on secrets.__ Secret keys and nonces are never
