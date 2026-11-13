@@ -190,6 +190,11 @@ instance, and errors carry no secrets. A secret key leaves the library only
 through `secKeyToBytes`, and a secret nonce only through the `Unsafe`
 module.
 
+Messages can be any length, as BIP-327 allows. Nonce generation and signing
+hash long messages without copying them, but `verify` (BIP-340 verification
+in `ppad-secp256k1`) copies the message once more, so cap the size of
+messages from untrusted parties.
+
 The test suite runs the official [BIP-0327][bip327] test vectors, loaded
 from the upstream JSON files, with exact-output assertions; invalid-encoding
 vectors check that decoding fails for exactly the contribution the vector
