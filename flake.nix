@@ -16,7 +16,7 @@
     # ppad-secp256k1 0.5.4 / ppad-fixed 0.1.3 (below our bounds) and marks
     # ppad-sha256 / ppad-sha512 broken.
     ppad-secp256k1-src = {
-      url = "https://hackage.haskell.org/package/ppad-secp256k1-0.5.10/ppad-secp256k1-0.5.10.tar.gz";
+      url = "https://hackage.haskell.org/package/ppad-secp256k1-0.5.11/ppad-secp256k1-0.5.11.tar.gz";
       flake = false;
     };
     ppad-fixed-src = {
@@ -28,7 +28,7 @@
       flake = false;
     };
     ppad-sha256-src = {
-      url = "https://hackage.haskell.org/package/ppad-sha256-0.3.6/ppad-sha256-0.3.6.tar.gz";
+      url = "https://hackage.haskell.org/package/ppad-sha256-0.3.7/ppad-sha256-0.3.7.tar.gz";
       flake = false;
     };
     ppad-sha512-src = {

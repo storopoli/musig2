@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+* Dependencies:
+  - Require `ppad-secp256k1 >= 0.5.11`, whose BIP-340 signing and
+    verification hash the message without copying it (it needs
+    `ppad-sha256 >= 0.3.7`). With a 128 MiB message, peak memory for
+    `verify` falls from about 268 MB to the size of the message
+
 ## 0.3.1 (2026-11-13)
 
 * Performance:
