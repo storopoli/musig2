@@ -39,6 +39,16 @@ an error), but a different contribution from a signer whose contribution was
 accepted is a 'DuplicateContribution'. The finishing functions blame every
 signer whose contribution is still missing. Blames carry no secrets.
 
+The signer index passed to 'receivePubNonce' and 'receivePartialSig' is
+trusted: take it from the authenticated connection the bytes arrived on (for
+example, a roster that maps each signer's authenticated identity to its
+index), never from the message itself. A participant that can choose the
+index can send a valid nonce in an honest signer's slot first: the honest
+signer's own nonce is then blamed as a 'DuplicateContribution', and its
+partial signature, checked against the wrong nonce, as invalid. It cannot
+make the coordinator accept an invalid signature, but it can make the
+session fail with an honest signer blamed.
+
 == Trust
 
 The coordinator learns nothing secret and cannot forge signatures, so the
@@ -246,7 +256,7 @@ accepted and change nothing) or 'InvalidPubNonceEncoding'. On 'Left' the
 round is unchanged.
 -}
 receivePubNonce ::
-  -- | Signer index.
+  -- | Signer index, from the authenticated connection the bytes arrived on.
   Int ->
   -- | The encoded public nonce.
   ByteString ->
@@ -339,7 +349,7 @@ again are accepted and change nothing), 'InvalidPartialSigEncoding' or
 'InvalidPartialSignature'. On 'Left' the round is unchanged.
 -}
 receivePartialSig ::
-  -- | Signer index.
+  -- | Signer index, from the authenticated connection the bytes arrived on.
   Int ->
   -- | The encoded partial signature.
   ByteString ->

@@ -112,10 +112,12 @@ The `Crypto.Curve.Secp256k1.MuSig2.Coordinator` module collects the signers'
 contributions as bytes, by signer index (the position of the signer's key in
 the key aggregation context). It decodes and verifies each nonce and partial
 signature as it arrives and blames the signer of an invalid, conflicting or
-missing one (`Blame`). The coordinator can be one of the signers or a
-separate, untrusted party: a wrong aggregate nonce can only make the session
-fail. With `Control.Monad (foldM)`, `Data.Bifunctor (first)` and the module
-imported qualified as `Coordinator`:
+missing one (`Blame`). The signer index is trusted, so take it from the
+authenticated connection a contribution arrived on, never from the message.
+The coordinator can be one of the signers or a separate, untrusted party: a
+wrong aggregate nonce can only make the session fail. With
+`Control.Monad (foldM)`, `Data.Bifunctor (first)` and the module imported
+qualified as `Coordinator`:
 
 <!-- coordinator start -->
 ```haskell
@@ -183,8 +185,10 @@ remaining caveats.
 
 The API is hard to misuse by construction: every value of an exported type is
 valid (decoders and smart constructors check points, scalar ranges and
-lengths), secret keys and nonces have no `Show`, `Eq`, `Ord` or encoding,
-and errors carry no secrets.
+lengths), secret keys and nonces have no `Show`, `Eq`, `Ord` or `Encode`
+instance, and errors carry no secrets. A secret key leaves the library only
+through `secKeyToBytes`, and a secret nonce only through the `Unsafe`
+module.
 
 The test suite runs the official [BIP-0327][bip327] test vectors, loaded
 from the upstream JSON files, with exact-output assertions; invalid-encoding
