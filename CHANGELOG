@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 (2026-11-13)
 
 * Performance:
   - Tagged hashes of 64 KiB or more are hashed chunk by chunk instead of
