@@ -26,10 +26,13 @@ import Crypto.Curve.Secp256k1.MuSig2 (
   secKeyToBytes,
  )
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (curveOrder, fieldSize, integerToBytes32)
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Types (Signature (..))
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Types (Signature (..), mkAggNonce, mkPubNonce)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Internal as BI
 import Data.Proxy (Proxy (..))
+import Foreign.ForeignPtr (withForeignPtr)
+import Foreign.Ptr (plusPtr)
 import Generators
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -95,6 +98,10 @@ testEncoding =
                   .&&. decodeAs @AggNonce (BS.take 33 (encode pn) <> bad) === Left InvalidPoint
         , testCase "pubKeyFromPoint: infinity and points off the curve" $ do
             pubKeyFromPoint _CURVE_ZERO @?= Left PointAtInfinity
+            pubKeyFromPoint (Projective 0 2 0) @?= Left PointAtInfinity
+            pubKeyFromPoint (Projective 0 0 0) @?= Left InvalidPoint
+            pubKeyFromPoint (Projective 1 0 0) @?= Left InvalidPoint
+            pubKeyFromPoint (Projective 1 2 0) @?= Left InvalidPoint
             pubKeyFromPoint (Projective 1 1 1) @?= Left InvalidPoint
             fmap encode (pubKeyFromPoint _CURVE_G) @?= Right (encode (secKeyPubKey (unsafeSecKey 1)))
         ]
@@ -114,6 +121,14 @@ testEncoding =
             either Just (const Nothing) (secKeyFromBytes (integerToBytes32 d)) === Just ScalarOutOfRange
         , testCase "SecKey: zero" $
             either Just (const Nothing) (secKeyFromBytes (BS.replicate 32 0)) @?= Just ScalarZero
+        ]
+    , testGroup
+        "slice detachment"
+        [ decodedCopiesSlice "PubKey" (secKeyPubKey (unsafeSecKey 1))
+        , decodedCopiesSlice "XOnlyPubKey" (pubKeyXOnly (secKeyPubKey (unsafeSecKey 1)))
+        , decodedCopiesSlice "PubNonce" (mkPubNonce _CURVE_G (pubKeyPoint (secKeyPubKey (unsafeSecKey 2))))
+        , decodedCopiesSlice "AggNonce" (mkAggNonce _CURVE_G _CURVE_ZERO)
+        , decodedCopiesSlice "Signature" (Signature (integerToBytes32 1 <> integerToBytes32 2))
         ]
     ]
  where
@@ -139,3 +154,19 @@ lengthOtherThan n = choose (0, 100) `suchThat` (/= n) >>= genBytes
 wrongLength :: forall a. (Encode a, Show a, Eq a) => Proxy a -> Int -> TestTree
 wrongLength _ n = testProperty ("length /= " <> show n) . forAll (lengthOtherThan n) $ \b ->
   (decode b :: Either DecodeError a) === Left (InvalidLength n (BS.length b))
+
+decodedCopiesSlice :: forall a. (Encode a, Eq a, Show a) => String -> a -> TestTree
+decodedCopiesSlice name val = testCase name $ do
+  let raw = encode val
+      pad = BS.replicate 100 0xAA
+      bigBuf = pad <> raw <> pad
+      slice = BS.take (BS.length raw) (BS.drop 100 bigBuf)
+  decoded <- either (assertFailure . show) pure (decodeAs @a slice)
+  decoded @?= val
+  let BI.BS fpBig lenBig = bigBuf
+      BI.BS fpSlice _ = slice
+      BI.BS fpOut _ = encode decoded
+  assertBool "decoded value retains slice ForeignPtr" (fpOut /= fpSlice)
+  withForeignPtr fpBig $ \pBig ->
+    withForeignPtr fpOut $ \pOut ->
+      assertBool "decoded value points inside parent buffer" (pOut < pBig || pOut >= plusPtr pBig lenBig)

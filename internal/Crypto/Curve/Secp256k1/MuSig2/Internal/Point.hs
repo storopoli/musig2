@@ -28,20 +28,26 @@ module Crypto.Curve.Secp256k1.MuSig2.Internal.Point (
   sumPoints,
 ) where
 
-import Crypto.Curve.Secp256k1 (Context, Projective, add, mul_vartime, mul_wnaf, precompute, serialize_point, valid, _CURVE_ZERO)
+import Crypto.Curve.Secp256k1 (Context, Projective (..), add, mul_vartime, mul_wnaf, precompute, serialize_point, valid, _CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Scalar (SecScalar, modQ, secScalarWider)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as BU
 import Data.Maybe (fromMaybe)
+import qualified Numeric.Montgomery.Secp256k1.Curve as C
 
--- | Whether a point is the point at infinity.
+{- | Whether a point is the point at infinity: projective coordinates
+@(0 : Y : 0)@ with \(Y \neq 0\).
+
+Unlike @p == _CURVE_ZERO@ (which checks only \(Z = 0\)), this rejects invalid
+\(Z = 0\) triples such as @(0, 0, 0)@ and @(1, 2, 0)@.
+-}
 isInfinity :: Projective -> Bool
-isInfinity p = p == _CURVE_ZERO
+isInfinity (Projective x y z) = C.eq_vartime z C.zero && C.eq_vartime x C.zero && not (C.eq_vartime y C.zero)
 
--- | A finite point on the curve (ppad's 'Projective' constructor is exported, so values may be anything).
+-- | A finite point on the curve (ppad's v'Projective' constructor is exported, so values may be anything).
 isValidPoint :: Projective -> Bool
-isValidPoint p = not (isInfinity p) && valid p
+isValidPoint p@(Projective _ _ z) = not (C.eq_vartime z C.zero) && valid p
 
 {- | @cbytes@: 33-byte compressed encoding of a finite point.
 

@@ -56,6 +56,7 @@ module Crypto.Curve.Secp256k1.MuSig2.Internal.Types (
 ) where
 
 import Control.DeepSeq (NFData (..))
+import Control.Monad (void, when)
 import Crypto.Curve.Secp256k1 (Projective, neg, parse_point, _CURVE_ZERO)
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Error (DecodeError (..))
 import Crypto.Curve.Secp256k1.MuSig2.Internal.Point (cbytes, cbytesExt, hasEvenYBytes, infinityBytes, isInfinity, isValidPoint, mulGSecret)
@@ -153,7 +154,9 @@ instance NFData PubKey where
 
 instance Encode PubKey where
   encode = pubKeyBytes
-  decode b = (`PubKey` b) <$> decodeCPoint b
+  decode b = do
+    p <- decodeCPoint b
+    Right $! PubKey p (BS.copy b)
 
 -- | A t'PubKey' from a point already known to be finite and on the curve.
 mkPubKey :: Projective -> PubKey
@@ -200,7 +203,7 @@ instance Encode XOnlyPubKey where
     expectLength 32 b
     -- 'parse_point' lifts 32 bytes as a BIP-340 key: x < p, on the curve, even y.
     p <- maybe (Left InvalidPoint) Right (parse_point b)
-    Right (XOnlyPubKey p b)
+    Right $! XOnlyPubKey p (BS.copy b)
 
 -- | The x-only key of a public key (negated to even y if needed).
 pubKeyXOnly :: PubKey -> XOnlyPubKey
@@ -306,7 +309,7 @@ instance Encode PubNonce where
     expectLength 66 b
     r1 <- decodeCPoint (BS.take 33 b)
     r2 <- decodeCPoint (BS.drop 33 b)
-    Right (PubNonce r1 r2 b)
+    Right $! PubNonce r1 r2 (BS.copy b)
 
 -- | A t'PubNonce' from two points already known to be finite and on the curve.
 mkPubNonce :: Projective -> Projective -> PubNonce
@@ -343,7 +346,7 @@ instance Encode AggNonce where
     expectLength 66 b
     r1 <- decodeCPointExt (BS.take 33 b)
     r2 <- decodeCPointExt (BS.drop 33 b)
-    Right (AggNonce r1 r2 b)
+    Right $! AggNonce r1 r2 (BS.copy b)
 
 -- | An t'AggNonce' from two points on the curve (or infinity).
 mkAggNonce :: Projective -> Projective -> AggNonce
@@ -392,6 +395,6 @@ instance Encode Signature where
   encode = signatureBytes
   decode b = do
     expectLength 64 b
-    if bytesToInteger (BS.take 32 b) >= fieldSize
-      then Left InvalidPoint
-      else Signature b <$ decodeScalar (BS.drop 32 b)
+    when (bytesToInteger (BS.take 32 b) >= fieldSize) (Left InvalidPoint)
+    void (decodeScalar (BS.drop 32 b))
+    Right $! Signature (BS.copy b)
