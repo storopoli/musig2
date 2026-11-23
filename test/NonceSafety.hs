@@ -7,17 +7,22 @@ module NonceSafety (testNonceSafety) where
 
 import Control.Concurrent (forkIO, getNumCapabilities)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, readMVar, takeMVar)
+import Control.DeepSeq (rnf)
+import Control.Exception (ErrorCall, evaluate, try)
 import Control.Monad (forM_, replicateM, void)
 import Crypto.Curve.Secp256k1.MuSig2
-import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (peekSecNonce, secNonceIsUsed, secNoncePubNonce)
+import Crypto.Curve.Secp256k1.MuSig2.Internal.Nonce (peekSecNonce, secNonceIsUsed, secNoncePubKey, secNoncePubNonce)
 import Crypto.Curve.Secp256k1.MuSig2.Unsafe
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Either (lefts, rights)
+import qualified Data.ByteString.Internal as BI
+import Data.Either (isLeft, lefts, rights)
 import Data.IORef (newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe (isJust)
 import Data.Word (Word64)
+import Foreign.ForeignPtr (withForeignPtr)
+import Foreign.Ptr (plusPtr)
 import Test.Tasty
 import Test.Tasty.HUnit
 import Util (failsWith, pubNonceFromInts, secKeyFromInt, unsafeRight)
@@ -39,12 +44,14 @@ testNonceSafety =
         [ testCase "a nonce bound to an aggregate key refuses other sessions" bindAggPubKey
         , testCase "a nonce bound to a message refuses other messages" bindMessage
         , testCase "a nonce bound to the session's key and message signs" bindMatches
+        , testCase "NonceInputs NFData forces all fields" nonceInputsNFData
         ]
     , testGroup
         "Unsafe"
         [ testCase "secNonceToBytes consumes the nonce" exportConsumes
         , testCase "secNonceFromBytes . secNonceToBytes signs like the original" exportImport
         , testCase "secNonceFromBytes validates its input" importValidates
+        , testCase "secNonceFromBytes copies the public key out of the 97-byte secret buffer" importCopiesPubKey
         , testCase "nonceGenWithRand rejects random bytes that are not 32 long" randLength
         , testCase "nonceGenWithRand is deterministic and each result is a fresh nonce" withRandFresh
         , testCase "nonceGenCounter is NonceGen with bytes(8, counter) || 0^24 and the secret key" counterIsNonceGen
@@ -200,6 +207,27 @@ bindMatches = do
   psig <- sign sn sk1 ses >>= either (assertFailure . show) pure
   assertBool "partialSigVerify" (partialSigVerify ses pk1 pn psig)
 
+nonceInputsNFData :: Assertion
+nonceInputsNFData = do
+  rnf noNonceInputs @?= ()
+  let full =
+        NonceInputs
+          { nonceSecKey = Just sk1
+          , nonceAggPubKey = Just (aggXOnlyPubKey ctx12)
+          , nonceMessage = Just msgA
+          , nonceExtraInput = Just "extra"
+          }
+  rnf full @?= ()
+  expectError noNonceInputs{nonceSecKey = Just (error "boom")}
+  expectError noNonceInputs{nonceAggPubKey = Just (error "boom")}
+  expectError noNonceInputs{nonceMessage = Just (error "boom")}
+  expectError noNonceInputs{nonceExtraInput = Just (error "boom")}
+ where
+  expectError :: NonceInputs -> Assertion
+  expectError inputs = do
+    result <- try (evaluate (rnf inputs)) :: IO (Either ErrorCall ())
+    assertBool "expected rnf to force bottom field" (isLeft result)
+
 -- Unsafe --------------------------------------------------------------------------
 
 exportConsumes :: Assertion
@@ -234,10 +262,23 @@ importValidates = do
   bytes <- secNonceToBytes sn >>= maybe (assertFailure "export failed") pure
   let err b = failure <$> secNonceFromBytes b
   err (BS.take 96 bytes) >>= (@?= Just (InvalidLength 97 96))
+  err (BS.replicate 97 0) >>= (@?= Just ScalarZero)
   err (BS.replicate 32 0 <> BS.drop 32 bytes) >>= (@?= Just ScalarZero)
+  err (BS.take 32 bytes <> BS.replicate 32 0 <> BS.drop 64 bytes) >>= (@?= Just ScalarZero)
   err (BS.take 32 bytes <> BS.replicate 32 0xFF <> BS.drop 64 bytes) >>= (@?= Just ScalarOutOfRange)
   err (BS.take 64 bytes <> BS.replicate 33 0) >>= (@?= Just PointAtInfinity)
   err (BS.take 64 bytes <> BS.cons 0x04 (BS.drop 65 bytes)) >>= (@?= Just InvalidPoint)
+
+importCopiesPubKey :: Assertion
+importCopiesPubKey = do
+  (sn, _) <- setup noNonceInputs ctx12 msgA
+  raw <- secNonceToBytes sn >>= maybe (assertFailure "export failed") pure
+  imported <- secNonceFromBytes raw >>= either (assertFailure . show) pure
+  let BI.BS rawFp rawLen = raw
+      BI.BS pkFp _ = encode (secNoncePubKey imported)
+  withForeignPtr rawFp $ \rawPtr ->
+    withForeignPtr pkFp $ \pkPtr ->
+      assertBool "snPubKey does not share the 97-byte input buffer" (pkPtr < rawPtr || pkPtr >= rawPtr `plusPtr` rawLen)
 
 randLength :: Assertion
 randLength = do
