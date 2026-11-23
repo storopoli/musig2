@@ -389,7 +389,8 @@ data SigRoundError
 instance Exception SigRoundError
 
 instance NFData SigRoundError where
-  rnf = rwhnf
+  rnf (SigRoundBlame bs) = rnf bs
+  rnf FinalSignatureInvalid = ()
 
 {- | Ends round two: aggregates the partial signatures (BIP-327
 @PartialSigAgg@) and checks the result with 'verify' against the session's
