@@ -197,7 +197,7 @@ parseKeySort = strictObject "key_sort" ["pubkeys", "sorted_pubkeys"] $ \o ->
 data KeyAggVectors = KeyAggVectors
   { kaPubkeys :: [ByteString]
   , kaTweaks :: [ByteString]
-  , kaValid :: [([Int], ByteString)]
+  , kaValid :: [([Int], ByteString, Maybe String)]
   , kaError :: [KeyAggErrorCase]
   }
 
@@ -213,7 +213,9 @@ parseKeyAgg :: Value -> Parser KeyAggVectors
 parseKeyAgg = strictObject "key_agg" ["pubkeys", "tweaks", "valid_test_cases", "error_test_cases"] $ \o -> do
   pubkeys <- hexList o "pubkeys"
   tweaks <- hexList o "tweaks"
-  valid <- o .: "valid_test_cases" >>= traverse (strictObject "key_agg valid case" ["key_indices", "expected"] (\c -> (,) <$> c .: "key_indices" <*> hexField c "expected"))
+  valid <-
+    o .: "valid_test_cases"
+      >>= traverse (strictObject "key_agg valid case" ["key_indices", "expected", "comment"] (\c -> (,,) <$> c .: "key_indices" <*> hexField c "expected" <*> c .:? "comment"))
   errs <-
     o .: "error_test_cases"
       >>= traverse
@@ -671,7 +673,7 @@ keySortTests (KeySortVectors pubkeys sorted) =
 keyAggTests :: KeyAggVectors -> [TestTree]
 keyAggTests v = zipWith validCase [0 ..] (kaValid v) <> zipWith errorCase [0 ..] (kaError v)
  where
-  validCase i (keyIdxs, expected) = testCase (caseName "valid" i Nothing) $ do
+  validCase i (keyIdxs, expected, comment) = testCase (caseName "valid" i comment) $ do
     keys <- expectRight "vector" (select "pubkey" (kaPubkeys v) keyIdxs)
     ctx <- expectLib "KeyAgg" (keyAggBytes keys [])
     assertBytes "xbytes(Q)" expected (encode (aggXOnlyPubKey ctx))
