@@ -71,7 +71,8 @@ import Data.Word (Word8)
 
 @'decode' . 'encode' = 'Right'@, and 'decode' accepts exactly the canonical
 encodings: it rejects wrong lengths, invalid points and out-of-range scalars.
-Secrets have no instance.
+'decode' copies its input bytes so decoding a slice does not retain a larger
+parent buffer. Secrets have no instance.
 -}
 class Encode a where
   -- | The canonical encoding.

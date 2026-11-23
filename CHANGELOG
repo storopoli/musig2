@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.3.3 (2026-11-23)
+
+* Security and memory hygiene:
+  - `secNonceFromBytes` now validates the secret scalars before decoding the
+    public key, so a 97-byte all-zero wiped nonce fails with `ScalarZero`
+    (matching its documentation) instead of `PointAtInfinity`, and copies the
+    public-key slice so the imported `SecNonce` does not retain the caller's
+    97-byte secret buffer
+  - `decode` for `PubKey`, `XOnlyPubKey`, `PubNonce`, `AggNonce` and
+    `Signature` now copies its input bytes so decoding a slice of a larger
+    `ByteString` does not retain the parent buffer
+* Bug fixes:
+  - Fix `NFData SigRoundError` to force the `NonEmpty Blame` payload of
+    `SigRoundBlame` instead of evaluating only to WHNF
+  - Add the missing `NFData NonceInputs` instance so every exported type has
+    an `NFData` instance
+  - Tighten `pubKeyFromPoint` so invalid projective triples with `Z = 0`
+    (such as `(0, 0, 0)` or `(1, 2, 0)`) return `InvalidPoint`, reserving
+    `PointAtInfinity` for genuine projective points at infinity `(0 : Y : 0)`
+    with `Y /= 0`
+  - Use `atomicReadIntArray#` in `OneShot.isClaimed` so concurrent reads
+    synchronize properly with `casIntArray#` in `claimOneShot` on weakly
+    ordered architectures
+* Tests:
+  - Accept the optional `"comment"` field on valid `key_agg_vectors.json`
+    test cases in `OfficialVectors`, matching upstream BIP-327 vector parsers
+  - Add regression tests for `secNonceFromBytes` validation order and buffer
+    detachment, `NFData NonceInputs`, `NFData SigRoundError`, `Z = 0`
+    projective triples in `pubKeyFromPoint`, and `Encode` slice detachment
+
 ## 0.3.2 (2026-11-13)
 
 * Dependencies:
