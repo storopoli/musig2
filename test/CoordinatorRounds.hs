@@ -7,6 +7,7 @@ every kind of misbehavior is blamed on exactly the signers responsible.
 -}
 module CoordinatorRounds (testCoordinator) where
 
+import Control.Exception (ErrorCall (..), fromException)
 import Control.Monad (foldM, forM)
 import Crypto.Curve.Secp256k1.MuSig2
 import Crypto.Curve.Secp256k1.MuSig2.Coordinator
@@ -20,6 +21,7 @@ import Data.List (sortOn)
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
 import Generators (TweakOp, applyTweakOp, genMessage, genNonZeroScalar, genTweakOp)
+import qualified Test.QuickCheck as QC
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
@@ -48,6 +50,7 @@ testCoordinator =
         , testCase "an index outside the key list is an unknown signer" sigRoundUnknown
         , testCase "finishing blames every signer whose partial signature is missing" sigRoundMissingBlame
         , testCase "the coordinator can sign in sigRoundSession" sigRoundCoordinatorSigns
+        , testCase "NFData SigRoundError forces all blames in SigRoundBlame" sigRoundErrorNFData
         ]
     , testGroup
         "properties"
@@ -243,6 +246,31 @@ sigRoundCoordinatorSigns = do
   psigs <- forM (zip (NE.toList (fxSecKeys fixture)) ns) $ \(sk, (sn, _)) -> unsafeRight <$> sign sn sk (sigRoundSession sr0)
   sr <- either (assertFailure . show) pure (foldM (\r (i, psig) -> receivePartialSig i (encode psig) r) sr0 (zip [0 ..] psigs))
   assertBool "signature" (either (const False) (verify (aggXOnlyPubKey (fxCtx fixture)) (fxMsg fixture)) (finishSigRound sr))
+
+sigRoundErrorNFData :: Assertion
+sigRoundErrorNFData = do
+  -- QuickCheck's 'total' invokes 'Control.DeepSeq.rnf' without needing a direct
+  -- deepseq dependency in the test suite.
+  assertEvaluates FinalSignatureInvalid
+  assertEvaluates (SigRoundBlame (Blame 0 MissingContribution :| []))
+  assertThrowsError "head" (SigRoundBlame (error "head" :| []))
+  assertThrowsError "tail" (SigRoundBlame (Blame 0 MissingContribution :| error "tail"))
+  assertThrowsError "elem" (SigRoundBlame (Blame 0 MissingContribution :| [error "elem"]))
+ where
+  eval :: SigRoundError -> IO QC.Result
+  eval = QC.quickCheckWithResult QC.stdArgs{QC.chatty = False, QC.maxSuccess = 1} . QC.total
+  assertEvaluates :: SigRoundError -> Assertion
+  assertEvaluates x = do
+    res <- eval x
+    assertBool (show res) (QC.isSuccess res)
+  assertThrowsError :: String -> SigRoundError -> Assertion
+  assertThrowsError expected x = do
+    res <- eval x
+    case res of
+      QC.Failure{QC.theException = Just ex} -> case fromException ex of
+        Just (ErrorCall msg) -> msg @?= expected
+        Nothing -> assertFailure ("expected ErrorCall, got: " <> show ex)
+      _ -> assertFailure ("expected ErrorCall " <> show expected <> ", got: " <> show res)
 
 -- Properties -------------------------------------------------------------------
 
