@@ -41,12 +41,12 @@ import GHC.Exts (
   MutableByteArray#,
   Ptr (..),
   RealWorld,
+  atomicReadIntArray#,
   casIntArray#,
   copyAddrToByteArray#,
   copyMutableByteArrayToAddr#,
   isTrue#,
   newAlignedPinnedByteArray#,
-  readIntArray#,
   setByteArray#,
   touch#,
   writeIntArray#,
@@ -103,7 +103,7 @@ claimOneShot os@(OneShot len mba) = mask_ $ do
 
 -- | Whether the buffer has been claimed.
 isClaimed :: OneShot -> IO Bool
-isClaimed (OneShot _ mba) = IO $ \s0 -> case readIntArray# mba 0# s0 of
+isClaimed (OneShot _ mba) = IO $ \s0 -> case atomicReadIntArray# mba 0# s0 of
   (# s1, st #) -> (# s1, isTrue# (st ==# 1#) #)
 
 {- | The current contents of the secret area, without claiming it (all zero

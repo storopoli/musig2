@@ -171,9 +171,10 @@ secNonceFromBytes b = case parts of
  where
   parts = do
     expectLength 97 b
-    pk <- decode (BS.drop 64 b)
     k1 <- secScalarFromBytes (BS.take 32 b)
     k2 <- secScalarFromBytes (BS.take 32 (BS.drop 32 b))
+    -- Copy so snPubKey does not retain the 97-byte input buffer holding k1 || k2.
+    pk <- decode (BS.copy (BS.drop 64 b))
     Right (k1, k2, pk)
 
 {- | Consumes the nonce and returns its 97-byte BIP-327 encoding; 'Nothing' if
@@ -206,6 +207,9 @@ data NonceInputs = NonceInputs
   -- ^ Any other data, e.g. a session identifier or a counter.
   }
 
+instance NFData NonceInputs where
+  rnf (NonceInputs sk apk m extra) = rnf sk `seq` rnf apk `seq` rnf m `seq` rnf extra
+
 -- | No optional inputs: the nonce depends only on fresh randomness and the public key.
 noNonceInputs :: NonceInputs
 noNonceInputs = NonceInputs Nothing Nothing Nothing Nothing
@@ -231,7 +235,7 @@ nonceGen pk inputs = case validateNonceInputs pk inputs of
     rand <- getEntropy 32
     let (k1, k2) = nonceGenScalars rand pk inputs
     case pubNonceFromScalars k1 k2 of
-      -- k1 = 0 or k2 = 0: probability ~2^-127, draw again.
+      -- k1 = 0 or k2 = 0: probability ~2^-254, draw again.
       Nothing -> loop
       Just pn -> do
         sn <- newSecNonce k1 k2 pk pn (nonceAggPubKey inputs) (nonceMessage inputs)

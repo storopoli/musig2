@@ -127,6 +127,7 @@ test-suite musig2-tests
     , base               >=4.20 && <5
     , base16-bytestring
     , bytestring
+    , deepseq
     , directory
     , filepath
     , musig2:internal
