@@ -178,8 +178,8 @@ one-shot: `sign` atomically consumes the nonce (and zero-fills its buffer)
 before anything else, so a second `sign` with the same nonce, from any copy
 or thread, fails with `SecNonceAlreadyUsed`. The
 `Crypto.Curve.Secp256k1.MuSig2.Unsafe` module holds the escape hatches this
-cannot cover (caller-supplied randomness, counters, exporting secret nonces).
-Arithmetic on secret keys and nonces is constant-time (fixed-width
+cannot cover (caller-supplied randomness, counters, exporting and importing
+secret nonces). Arithmetic on secret keys and nonces is constant-time (fixed-width
 Montgomery arithmetic from `ppad-fixed`); the module documentation lists the
 remaining caveats.
 

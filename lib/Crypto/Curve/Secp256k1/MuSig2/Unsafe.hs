@@ -126,7 +126,8 @@ secNonceToBytes = Nonce.secNonceToBytes
 one-shot t'SecNonce'. Checks that both scalars are in \([1, n)\) (a nonce
 zeroed by another BIP-327 implementation after use is rejected with
 'Crypto.Curve.Secp256k1.MuSig2.ScalarZero') and that the public key is a
-valid encoding.
+valid encoding. Copies the public key out of the input bytes so the imported
+nonce does not retain the caller's secret buffer.
 
 __Each encoding must be imported at most once__: the library cannot know
 that two imports are the same nonce. See the module documentation.
